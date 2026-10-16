@@ -95,4 +95,15 @@ export component AppWindow inherits Window {
             }
         }
     }
+
+    // Capa invisible sobre toda la ventana: depende de State.repaint, así que al
+    // cambiarlo Slint la repinta entera (ver src/repaint.rs). Con x/y explícitos
+    // para que el compilador no la elimine por no dibujar nada.
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        background: State.repaint < 0 ? #000000 : transparent;
+    }
 }

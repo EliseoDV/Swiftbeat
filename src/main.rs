@@ -11,6 +11,7 @@ mod logger;
 mod media;
 mod meta;
 mod player;
+mod repaint;
 mod single;
 mod ui;
 mod webapi;
@@ -72,6 +73,7 @@ fn main() -> anyhow::Result<()> {
     #[cfg(debug_assertions)]
     if let Some(page) = std::env::var("SWIFTBEAT_DEMO").ok().and_then(|p| p.parse().ok()) {
         demo::fill(&app, page);
+        repaint::install(app.as_weak());
         app.run()?;
         return Ok(());
     }
@@ -81,6 +83,7 @@ fn main() -> anyhow::Result<()> {
     backend::bind(&app, &tx, liked.clone());
 
     app.show()?;
+    repaint::install(app.as_weak());
     media::install_when_ready(app.as_weak(), tx.clone());
     rt.spawn(backend::run(ui::Ui(app.as_weak()), tx, rx, http, liked));
     slint::run_event_loop()?;

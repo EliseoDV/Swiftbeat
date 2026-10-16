@@ -3,7 +3,7 @@
 
 #define AppName "Swiftbeat"
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.1.1"
 #endif
 #define AppExe "swiftbeat.exe"
 ; Debe coincidir con APP_USER_MODEL_ID en src/main.rs.
