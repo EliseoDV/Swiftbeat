@@ -1,0 +1,40 @@
+# Al publicar una etiqueta vX.Y.Z compila Swiftbeat, genera el instalador
+# y lo adjunta a la release de GitHub.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Compilar y generar el instalador
+        shell: pwsh
+        run: ./installer/build.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Swiftbeat-Setup
+          path: installer/Output/*.exe
+
+      - name: Publicar release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/Output/*.exe
+          generate_release_notes: true

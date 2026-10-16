@@ -1,0 +1,568 @@
+import { Theme } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { State, Api, Img, Card, TrackRow, Shelf } from "state.slint";
+
+export component IconButton inherits Rectangle {
+    in property <string> icon;
+    in property <bool> stroke: true;
+    in property <length> size: 18px;
+    in property <bool> active;
+    in property <bool> enabled: true;
+    in property <bool> show-dot;
+    in property <color> base: Theme.subtext;
+    callback clicked;
+    width: root.size + 12px;
+    height: root.size + 12px;
+    ta := TouchArea {
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if root.enabled {
+                root.clicked();
+            }
+        }
+        Icon {
+            width: root.size;
+            height: root.size;
+            data: root.icon;
+            stroke: root.stroke;
+            color: !root.enabled ? Theme.muted : root.active ? (ta.has-hover ? Theme.accent-hover : Theme.accent) : (ta.has-hover ? Theme.text : root.base);
+        }
+        if root.show-dot && root.active: Rectangle {
+            y: root.height - 4px;
+            width: 4px;
+            height: 4px;
+            border-radius: 2px;
+            background: Theme.accent;
+        }
+    }
+}
+
+export component CircleButton inherits Rectangle {
+    in property <string> icon;
+    in property <bool> stroke: true;
+    in property <length> size: 32px;
+    in property <length> icon-size: 16px;
+    in property <bool> enabled: true;
+    in property <bool> active;
+    in property <color> bg: #0a0a0a;
+    callback clicked;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: ta.has-hover && root.enabled ? Theme.elevated-hover : root.bg;
+    ta := TouchArea {
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if root.enabled {
+                root.clicked();
+            }
+        }
+    }
+    Icon {
+        width: root.icon-size;
+        height: root.icon-size;
+        data: root.icon;
+        stroke: root.stroke;
+        color: !root.enabled ? Theme.muted : (root.active || ta.has-hover) ? Theme.text : Theme.subtext;
+    }
+}
+
+export component PlayButton inherits Rectangle {
+    in property <bool> playing;
+    in property <length> size: 48px;
+    in property <color> bg: Theme.accent;
+    in property <color> hover-bg: Theme.accent-hover;
+    in property <color> icon-color: #000000;
+    callback clicked;
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: ta.has-hover ? root.hover-bg : root.bg;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+    Icon {
+        width: root.size * 0.42;
+        height: root.size * 0.42;
+        data: root.playing ? Icons.pause : Icons.play;
+        stroke: false;
+        color: root.icon-color;
+    }
+}
+
+export component Cover inherits Rectangle {
+    in property <string> url;
+    in property <int> px: 64;
+    in property <bool> round;
+    in property <bool> liked-tile;
+    in property <length> radius: 4px;
+    border-radius: root.round ? root.width / 2 : root.radius;
+    clip: true;
+    background: root.liked-tile ? @linear-gradient(135deg, #450af5 0%, #8e8ee5 60%, #c4efd9 100%) : #282828;
+    if root.url == "" && !root.liked-tile: Icon {
+        width: root.width * 0.4;
+        height: root.width * 0.4;
+        data: Icons.note;
+        stroke: false;
+        color: Theme.muted;
+    }
+    if root.liked-tile: Icon {
+        width: root.width * 0.42;
+        height: root.width * 0.42;
+        data: Icons.heart;
+        stroke: false;
+        color: #ffffff;
+    }
+    if root.url != "": Image {
+        width: 100%;
+        height: 100%;
+        source: Img.get(root.url, root.px, Img.epoch);
+        image-fit: cover;
+    }
+}
+
+export component CardView inherits Rectangle {
+    in property <Card> card;
+    property <bool> ctx-playing: State.ctx-uri == root.card.uri && State.playing;
+    border-radius: 8px;
+    background: ta.has-hover ? Theme.card-hover : transparent;
+    animate background { duration: 120ms; }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            Api.navigate(root.card.kind, root.card.uri);
+        }
+        VerticalLayout {
+            padding: 12px;
+            spacing: 4px;
+            alignment: start;
+            Rectangle {
+                height: root.width - 24px;
+                Cover {
+                    width: 100%;
+                    height: 100%;
+                    url: root.card.image;
+                    px: 200;
+                    round: root.card.kind == 1;
+                    liked-tile: root.card.kind == 3;
+                    radius: 6px;
+                }
+                PlayButton {
+                    x: parent.width - self.width - 8px;
+                    y: parent.height - self.height - (ta.has-hover || root.ctx-playing ? 8px : 0px);
+                    opacity: ta.has-hover || root.ctx-playing ? 1 : 0;
+                    animate opacity, y { duration: 150ms; }
+                    playing: root.ctx-playing;
+                    clicked => {
+                        if State.ctx-uri == root.card.uri {
+                            Api.toggle-play();
+                        } else {
+                            Api.play-card(root.card.kind, root.card.uri);
+                        }
+                    }
+                }
+            }
+            Rectangle { height: 4px; }
+            Text {
+                text: root.card.title;
+                color: Theme.text;
+                font-size: 15px;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: root.card.subtitle;
+                color: Theme.subtext;
+                font-size: 13px;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+export component ShelfView inherits VerticalLayout {
+    in property <Shelf> shelf;
+    property <int> cols: max(2, Math.floor((self.width + 8px) / 188px));
+    property <length> card-w: (self.width - (self.cols - 1) * 8px) / self.cols;
+    spacing: 2px;
+    Text {
+        text: root.shelf.title;
+        font-size: 22px;
+        font-weight: 700;
+        color: Theme.text;
+        overflow: elide;
+    }
+    Rectangle {
+        height: root.card-w + 44px;
+        for c[i] in root.shelf.items: CardView {
+            visible: i < root.cols;
+            x: i * (root.card-w + 8px);
+            y: 0;
+            width: root.card-w;
+            height: parent.height;
+            card: c;
+        }
+    }
+}
+
+// Texto enlazado a un álbum (kind 0) o artista (kind 1): se aclara y subraya al pasar el ratón.
+export component Link {
+    in property <string> text;
+    in property <string> uri;
+    in property <int> kind;
+    in property <color> color: Theme.subtext;
+    in property <length> font-size: 13px;
+    min-width: 0px;
+    preferred-width: label.preferred-width;
+    label := Text {
+        width: 100%;
+        height: 100%;
+        text: root.text;
+        color: link-ta.has-hover && root.uri != "" ? Theme.text : root.color;
+        font-size: root.font-size;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    if link-ta.has-hover && root.uri != "": Rectangle {
+        x: 0;
+        y: root.height / 2 + root.font-size * 0.62;
+        width: min(label.preferred-width, root.width);
+        height: 1px;
+        background: Theme.text;
+    }
+    link-ta := TouchArea {
+        mouse-cursor: root.uri != "" ? pointer : default;
+        clicked => {
+            if root.uri != "" {
+                Api.navigate(root.kind, root.uri);
+            }
+        }
+    }
+}
+
+export component TrackItem inherits Rectangle {
+    in property <TrackRow> track;
+    in property <int> source;
+    in property <bool> show-album: true;
+    in property <bool> show-cover: true;
+    in property <bool> compact;
+    property <bool> current: root.track.uri == State.np-uri;
+    property <bool> liked: Api.is-liked(root.track.uri, State.liked-epoch);
+    height: 56px;
+    border-radius: 4px;
+    background: ta.has-hover ? Theme.row-hover : transparent;
+    ContextMenuArea {
+        Menu {
+            MenuItem {
+                title: "Añadir a la cola";
+                activated => {
+                    Api.enqueue(root.source, root.track.index);
+                }
+            }
+            MenuItem {
+                title: root.liked ? "Quitar de Tus me gusta" : "Guardar en Tus me gusta";
+                activated => {
+                    Api.toggle-like(root.track.uri);
+                }
+            }
+            MenuSeparator { }
+            MenuItem {
+                title: "Ir al artista";
+                enabled: root.track.artist-uri != "";
+                activated => {
+                    Api.navigate(1, root.track.artist-uri);
+                }
+            }
+            MenuItem {
+                title: "Ir al álbum";
+                enabled: root.track.album-uri != "";
+                activated => {
+                    Api.navigate(0, root.track.album-uri);
+                }
+            }
+            Menu {
+                title: "Añadir a playlist";
+                for p in State.my-playlists: MenuItem {
+                    title: p.title;
+                    activated => {
+                        Api.add-to-playlist(root.source, root.track.index, p.uri);
+                    }
+                }
+            }
+        }
+        ta := TouchArea {
+            double-clicked => {
+                Api.play-row(root.source, root.track.index);
+            }
+            HorizontalLayout {
+                padding-left: root.compact ? 8px : 16px;
+                padding-right: root.compact ? 8px : 16px;
+                spacing: root.compact ? 10px : 16px;
+                if !root.compact: Rectangle {
+                    width: 24px;
+                    if !ta.has-hover: Text {
+                        width: 100%;
+                        height: 100%;
+                        text: root.track.index + 1;
+                        color: root.current ? Theme.accent : Theme.subtext;
+                        font-size: 15px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                    if ta.has-hover: IconButton {
+                        icon: root.current && State.playing ? Icons.pause : Icons.play;
+                        stroke: false;
+                        size: 14px;
+                        base: Theme.text;
+                        clicked => {
+                            if root.current {
+                                Api.toggle-play();
+                            } else {
+                                Api.play-row(root.source, root.track.index);
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    horizontal-stretch: 3;
+                    min-width: 0px;
+                    preferred-width: 0px;
+                    if root.show-cover: VerticalLayout {
+                        alignment: center;
+                        Cover {
+                            width: 40px;
+                            height: 40px;
+                            url: root.track.image;
+                            px: 40;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: root.track.title;
+                            color: root.current ? Theme.accent : Theme.text;
+                            font-size: 15px;
+                            overflow: elide;
+                        }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            if root.track.explicit: VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 15px;
+                                    height: 15px;
+                                    border-radius: 2px;
+                                    background: Theme.subtext;
+                                    Text {
+                                        text: "E";
+                                        font-size: 10px;
+                                        font-weight: 700;
+                                        color: #000000;
+                                    }
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: start;
+                                min-width: 0px;
+                                Link {
+                                    text: root.track.artists;
+                                    uri: root.track.artist-uri;
+                                    kind: 1;
+                                    color: ta.has-hover ? Theme.text : Theme.subtext;
+                                }
+                                if root.track.artist2 != "": Text {
+                                    text: ", ";
+                                    color: ta.has-hover ? Theme.text : Theme.subtext;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                }
+                                if root.track.artist2 != "": Link {
+                                    text: root.track.artist2;
+                                    uri: root.track.artist2-uri;
+                                    kind: 1;
+                                    color: ta.has-hover ? Theme.text : Theme.subtext;
+                                }
+                                if root.track.artist3 != "": Text {
+                                    text: ", ";
+                                    color: ta.has-hover ? Theme.text : Theme.subtext;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                }
+                                if root.track.artist3 != "": Link {
+                                    text: root.track.artist3;
+                                    uri: root.track.artist3-uri;
+                                    kind: 1;
+                                    color: ta.has-hover ? Theme.text : Theme.subtext;
+                                }
+                                if root.track.more-artists: Text {
+                                    text: ", …";
+                                    color: ta.has-hover ? Theme.text : Theme.subtext;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.show-album: Rectangle {
+                    horizontal-stretch: 2;
+                    min-width: 0px;
+                    preferred-width: 0px;
+                    Link {
+                        x: 0;
+                        width: min(self.preferred-width, parent.width);
+                        height: parent.height;
+                        text: root.track.album;
+                        uri: root.track.album-uri;
+                        kind: 0;
+                        color: ta.has-hover ? Theme.text : Theme.subtext;
+                    }
+                }
+                Rectangle {
+                    width: 30px;
+                    if root.liked || ta.has-hover: IconButton {
+                        icon: Icons.heart;
+                        stroke: !root.liked;
+                        active: root.liked;
+                        size: 16px;
+                        clicked => {
+                            Api.toggle-like(root.track.uri);
+                        }
+                    }
+                }
+                if !root.compact: Text {
+                    width: 44px;
+                    text: root.track.duration;
+                    color: Theme.subtext;
+                    font-size: 13px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+// Barra deslizante para progreso y volumen.
+export component Bar inherits Rectangle {
+    in property <float> value;
+    in property <bool> live;
+    // Paso por cada muesca de la rueda del ratón (0 = sin rueda).
+    in property <float> wheel-step;
+    callback changed(float);
+    out property <bool> dragging: ta.pressed;
+    property <float> drag-value;
+    property <float> shown: ta.pressed ? root.drag-value : max(0, min(1, root.value));
+    height: 16px;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        scroll-event(e) => {
+            if root.wheel-step <= 0 || e.delta-y == 0 {
+                return reject;
+            }
+            root.changed(max(0, min(1, root.value + (e.delta-y > 0 ? root.wheel-step : -root.wheel-step))));
+            return accept;
+        }
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.drag-value = max(0, min(1, self.mouse-x / root.width));
+                if root.live {
+                    root.changed(root.drag-value);
+                }
+            }
+            if e.kind == PointerEventKind.up {
+                root.changed(root.drag-value);
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.drag-value = max(0, min(1, self.mouse-x / root.width));
+                if root.live {
+                    root.changed(root.drag-value);
+                }
+            }
+        }
+    }
+    Rectangle {
+        y: (root.height - 4px) / 2;
+        height: 4px;
+        width: 100%;
+        border-radius: 2px;
+        background: Theme.track;
+        Rectangle {
+            x: 0;
+            width: parent.width * root.shown;
+            height: 100%;
+            border-radius: 2px;
+            background: ta.has-hover || ta.pressed ? Theme.accent : Theme.text;
+        }
+    }
+    if ta.has-hover || ta.pressed: Rectangle {
+        x: root.width * root.shown - 6px;
+        y: (root.height - 12px) / 2;
+        width: 12px;
+        height: 12px;
+        border-radius: 6px;
+        background: #ffffff;
+    }
+}
+
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> active;
+    callback clicked;
+    height: 32px;
+    border-radius: 16px;
+    background: root.active ? Theme.text : (ta.has-hover ? #ffffff24 : #ffffff12);
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        Text {
+            text: root.text;
+            color: root.active ? #000000 : Theme.text;
+            font-size: 14px;
+            vertical-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component PillButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> primary: true;
+    callback clicked;
+    height: 48px;
+    border-radius: 24px;
+    background: !root.enabled ? #3a3a3a : root.primary ? (ta.has-hover ? Theme.accent-hover : Theme.accent) : (ta.has-hover ? #ffffff24 : #ffffff12);
+    HorizontalLayout {
+        padding-left: 32px;
+        padding-right: 32px;
+        Text {
+            text: root.text;
+            color: root.primary && root.enabled ? #000000 : Theme.text;
+            font-size: 16px;
+            font-weight: 700;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if root.enabled {
+                root.clicked();
+            }
+        }
+    }
+}

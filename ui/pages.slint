@@ -1,0 +1,737 @@
+import { ScrollView, ListView, AboutSlint } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
+import { State, Api, Img, Card, TrackRow, Shelf } from "state.slint";
+import { IconButton, PlayButton, Cover, ShelfView, TrackItem, Chip, PillButton } from "components.slint";
+
+component QuickItem inherits Rectangle {
+    in property <Card> card;
+    property <bool> ctx-playing: State.ctx-uri == root.card.uri && State.playing;
+    border-radius: 4px;
+    clip: true;
+    background: ta.has-hover ? #ffffff2e : #ffffff14;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            Api.navigate(root.card.kind, root.card.uri);
+        }
+        HorizontalLayout {
+            spacing: 12px;
+            padding-right: 8px;
+            Cover {
+                width: root.height;
+                height: root.height;
+                url: root.card.image;
+                px: 64;
+                radius: 0;
+                round: root.card.kind == 1;
+                liked-tile: root.card.kind == 3;
+            }
+            Text {
+                text: root.card.title;
+                color: Theme.text;
+                font-size: 14px;
+                font-weight: 700;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            if ta.has-hover || root.ctx-playing: VerticalLayout {
+                alignment: center;
+                PlayButton {
+                    size: 32px;
+                    playing: root.ctx-playing;
+                    clicked => {
+                        if State.ctx-uri == root.card.uri {
+                            Api.toggle-play();
+                        } else {
+                            Api.play-card(root.card.kind, root.card.uri);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component HomePage inherits Rectangle {
+    background: @linear-gradient(180deg, #222a3a 0%, Theme.panel 45%);
+    sv := ScrollView {
+        content-width: sv.visible-width;
+        content-height: lay.preferred-height;
+        lay := VerticalLayout {
+            width: sv.visible-width;
+            padding: 24px;
+            spacing: 24px;
+            alignment: start;
+            Text {
+                text: State.greeting;
+                font-size: 30px;
+                font-weight: 700;
+                color: Theme.text;
+            }
+            Rectangle {
+                property <int> cols: root.width > 900px ? 4 : 2;
+                property <length> w: (self.width - (self.cols - 1) * 8px) / self.cols;
+                height: Math.ceil(State.quick.length / self.cols) * 64px;
+                for q[i] in State.quick: QuickItem {
+                    x: Math.mod(i, parent.cols) * (parent.w + 8px);
+                    y: Math.floor(i / parent.cols) * 64px;
+                    width: parent.w;
+                    height: 56px;
+                    card: q;
+                }
+            }
+            for s in State.shelves: ShelfView {
+                shelf: s;
+            }
+        }
+    }
+}
+
+component TopResult inherits Rectangle {
+    property <bool> ctx-playing: State.ctx-uri == State.search-top.uri && State.playing;
+    border-radius: 8px;
+    background: ta.has-hover ? #282828 : #181818;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            Api.navigate(State.search-top.kind, State.search-top.uri);
+        }
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+            alignment: start;
+            Cover {
+                width: 92px;
+                height: 92px;
+                url: State.search-top.image;
+                px: 100;
+                round: State.search-top.kind == 1;
+                radius: 6px;
+            }
+            Text {
+                text: State.search-top.title;
+                font-size: 30px;
+                font-weight: 800;
+                color: Theme.text;
+                overflow: elide;
+            }
+            Text {
+                text: State.search-top.subtitle;
+                font-size: 14px;
+                color: Theme.subtext;
+                overflow: elide;
+            }
+        }
+        PlayButton {
+            x: parent.width - self.width - 20px;
+            y: parent.height - self.height - 20px;
+            opacity: ta.has-hover || root.ctx-playing ? 1 : 0;
+            animate opacity { duration: 150ms; }
+            playing: root.ctx-playing;
+            clicked => {
+                if State.ctx-uri == State.search-top.uri {
+                    Api.toggle-play();
+                } else if State.search-top.kind == 4 {
+                    Api.play-row(1, 0);
+                } else {
+                    Api.play-card(State.search-top.kind, State.search-top.uri);
+                }
+            }
+        }
+    }
+}
+
+export component SearchPage inherits Rectangle {
+    if State.search-text == "": VerticalLayout {
+        alignment: center;
+        spacing: 8px;
+        Icon {
+            width: 64px;
+            height: 64px;
+            data: Icons.search;
+            color: Theme.muted;
+        }
+        Text {
+            text: "Busca canciones, artistas, álbumes o playlists";
+            font-size: 18px;
+            font-weight: 700;
+            color: Theme.text;
+            horizontal-alignment: center;
+        }
+    }
+    if State.search-text != "": sv := ScrollView {
+        content-width: sv.visible-width;
+        content-height: lay.preferred-height;
+        lay := VerticalLayout {
+            width: sv.visible-width;
+            padding: 24px;
+            spacing: 24px;
+            alignment: start;
+            if State.has-top: HorizontalLayout {
+                spacing: 24px;
+                VerticalLayout {
+                    width: max(260px, (lay.width - 72px) * 0.4);
+                    spacing: 8px;
+                    Text {
+                        text: "Resultado principal";
+                        font-size: 22px;
+                        font-weight: 700;
+                        color: Theme.text;
+                    }
+                    TopResult {
+                        height: 240px;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 3;
+                    preferred-width: 0px;
+                    spacing: 8px;
+                    alignment: start;
+                    Text {
+                        text: "Canciones";
+                        font-size: 22px;
+                        font-weight: 700;
+                        color: Theme.text;
+                    }
+                    for t in State.search-tracks: TrackItem {
+                        track: t;
+                        source: 1;
+                        compact: true;
+                        show-album: false;
+                    }
+                }
+            }
+            if !State.has-top && !State.loading: Text {
+                text: "No se encontraron resultados para «\{State.search-text}»";
+                font-size: 18px;
+                color: Theme.subtext;
+            }
+            for s in State.search-shelves: ShelfView {
+                shelf: s;
+            }
+        }
+    }
+}
+
+// Cabecera de playlist/álbum. Mide 392px y se dibuja en 7 rebanadas de 56px
+// dentro de la lista virtualizada para que todas las filas midan lo mismo.
+component CollectionHeader inherits Rectangle {
+    property <color> tint: Img.tint(State.coll-liked ? "liked" : State.coll-image, Img.epoch);
+    property <bool> ctx-playing: State.ctx-uri == State.coll-uri && State.playing;
+    background: @linear-gradient(180deg, root.tint 0%, root.tint.darker(0.55) 71%, Theme.panel 100%);
+    VerticalLayout {
+        HorizontalLayout {
+            height: 280px;
+            padding: 24px;
+            spacing: 24px;
+            VerticalLayout {
+                alignment: end;
+                Cover {
+                    width: 216px;
+                    height: 216px;
+                    url: State.coll-image;
+                    px: 216;
+                    liked-tile: State.coll-liked;
+                    radius: 4px;
+                }
+            }
+            VerticalLayout {
+                alignment: end;
+                spacing: 6px;
+                Text {
+                    text: State.coll-type;
+                    font-size: 14px;
+                    color: #ffffff;
+                }
+                Text {
+                    text: State.coll-title;
+                    font-size: max(28px, min(72px, (root.width - 300px) / (0.56 * max(1, State.coll-title.character-count))));
+                    font-weight: 800;
+                    color: #ffffff;
+                    overflow: elide;
+                }
+                if State.coll-description != "": Text {
+                    text: State.coll-description;
+                    font-size: 14px;
+                    color: #ffffffb3;
+                    overflow: elide;
+                }
+                Text {
+                    text: State.coll-subtitle;
+                    font-size: 14px;
+                    color: #ffffff;
+                    overflow: elide;
+                }
+            }
+        }
+        HorizontalLayout {
+            height: 72px;
+            padding-left: 24px;
+            spacing: 20px;
+            alignment: start;
+            VerticalLayout {
+                alignment: center;
+                PlayButton {
+                    size: 56px;
+                    playing: root.ctx-playing;
+                    clicked => {
+                        if State.ctx-uri == State.coll-uri {
+                            Api.toggle-play();
+                        } else {
+                            Api.play-row(0, -1);
+                        }
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.shuffle;
+                    size: 28px;
+                    active: State.shuffle;
+                    show-dot: true;
+                    clicked => {
+                        Api.toggle-shuffle();
+                    }
+                }
+            }
+        }
+        Rectangle {
+            height: 40px;
+            HorizontalLayout {
+                padding-left: 24px;
+                padding-right: 24px;
+                spacing: 16px;
+                Text {
+                    width: 24px;
+                    text: "#";
+                    color: Theme.subtext;
+                    font-size: 14px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+                Text {
+                    horizontal-stretch: 3;
+                    preferred-width: 0px;
+                    text: "Título";
+                    color: Theme.subtext;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
+                if root.width > 700px: Text {
+                    horizontal-stretch: 2;
+                    preferred-width: 0px;
+                    text: "Álbum";
+                    color: Theme.subtext;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    width: 30px;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    width: 44px;
+                    Icon {
+                        x: 26px;
+                        width: 16px;
+                        height: 16px;
+                        data: Icons.clock;
+                        color: Theme.subtext;
+                    }
+                }
+            }
+            Rectangle {
+                x: 24px;
+                y: parent.height - 1px;
+                width: parent.width - 48px;
+                height: 1px;
+                background: #ffffff1a;
+            }
+        }
+    }
+}
+
+export component CollectionPage inherits Rectangle {
+    ListView {
+        for row in State.coll-rows: Rectangle {
+            height: 56px;
+            if row.kind == 1: Rectangle {
+                width: 100%;
+                height: 56px;
+                clip: true;
+                CollectionHeader {
+                    x: 0;
+                    y: -row.index * 56px;
+                    width: parent.width;
+                    height: 392px;
+                }
+            }
+            if row.kind == 0: TrackItem {
+                x: 8px;
+                width: parent.width - 16px;
+                track: row;
+                source: 0;
+                show-album: parent.width > 700px;
+                show-cover: State.coll-type != "Álbum";
+            }
+        }
+    }
+    if State.loading: Rectangle {
+        y: 400px;
+        height: 40px;
+        Text {
+            text: "Cargando…";
+            color: Theme.subtext;
+            font-size: 14px;
+        }
+    }
+}
+
+export component ArtistPage inherits Rectangle {
+    property <bool> ctx-playing: State.ctx-uri == State.artist-uri && State.playing;
+    sv := ScrollView {
+        content-width: sv.visible-width;
+        content-height: lay.preferred-height;
+        lay := VerticalLayout {
+            width: sv.visible-width;
+            spacing: 16px;
+            padding-bottom: 32px;
+            alignment: start;
+            Rectangle {
+                height: 320px;
+                clip: true;
+                background: Img.tint(State.artist-image, Img.epoch);
+                if State.artist-image != "": Image {
+                    width: 100%;
+                    height: 100%;
+                    source: Img.get(State.artist-image, 640, Img.epoch);
+                    image-fit: cover;
+                    opacity: 0.85;
+                }
+                Rectangle {
+                    background: @linear-gradient(180deg, #00000000 35%, #000000b0 100%);
+                }
+                VerticalLayout {
+                    padding: 24px;
+                    alignment: end;
+                    Text {
+                        text: "Artista";
+                        color: #ffffff;
+                        font-size: 14px;
+                    }
+                    Text {
+                        text: State.artist-name;
+                        color: #ffffff;
+                        font-size: max(32px, min(88px, (root.width - 60px) / (0.6 * max(1, State.artist-name.character-count))));
+                        font-weight: 900;
+                        overflow: elide;
+                    }
+                }
+            }
+            HorizontalLayout {
+                padding-left: 24px;
+                alignment: start;
+                PlayButton {
+                    size: 56px;
+                    playing: root.ctx-playing;
+                    clicked => {
+                        if State.ctx-uri == State.artist-uri {
+                            Api.toggle-play();
+                        } else {
+                            Api.play-row(2, -1);
+                        }
+                    }
+                }
+            }
+            VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                spacing: 0px;
+                Text {
+                    text: "Populares";
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: Theme.text;
+                }
+                Rectangle { height: 8px; }
+                for t in State.artist-top: TrackItem {
+                    track: t;
+                    source: 2;
+                    show-album: root.width > 800px;
+                }
+            }
+            for s in State.artist-shelves: VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                ShelfView {
+                    shelf: s;
+                }
+            }
+        }
+    }
+    if State.loading: Text {
+        text: "Cargando…";
+        color: Theme.subtext;
+        font-size: 14px;
+    }
+}
+
+export component SettingsPage inherits Rectangle {
+    sv := ScrollView {
+        content-width: sv.visible-width;
+        content-height: lay.preferred-height;
+    lay := VerticalLayout {
+        width: sv.visible-width;
+        padding: 32px;
+        spacing: 16px;
+        alignment: start;
+        Text {
+            text: "Ajustes";
+            font-size: 32px;
+            font-weight: 800;
+            color: Theme.text;
+        }
+        Text {
+            text: "Calidad de audio";
+            font-size: 16px;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Chip {
+                text: "Normal · 96 kbps";
+                active: State.bitrate == 96;
+                clicked => {
+                    Api.set-bitrate(96);
+                }
+            }
+            Chip {
+                text: "Alta · 160 kbps";
+                active: State.bitrate == 160;
+                clicked => {
+                    Api.set-bitrate(160);
+                }
+            }
+            Chip {
+                text: "Muy alta · 320 kbps";
+                active: State.bitrate == 320;
+                clicked => {
+                    Api.set-bitrate(320);
+                }
+            }
+        }
+        Text {
+            text: "Se aplica al reiniciar Swiftbeat.";
+            font-size: 13px;
+            color: Theme.subtext;
+        }
+        Text {
+            text: "Normalizar volumen";
+            font-size: 16px;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            Chip {
+                text: "Activado";
+                active: State.normalise;
+                clicked => {
+                    Api.set-normalise(true);
+                }
+            }
+            Chip {
+                text: "Desactivado";
+                active: !State.normalise;
+                clicked => {
+                    Api.set-normalise(false);
+                }
+            }
+        }
+        Text {
+            text: "Se aplica al reiniciar Swiftbeat.";
+            font-size: 13px;
+            color: Theme.subtext;
+        }
+        Rectangle { height: 8px; }
+        Text {
+            text: "Cuenta";
+            font-size: 16px;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        Text {
+            text: "Sesión iniciada como \{State.user-name}";
+            font-size: 14px;
+            color: Theme.subtext;
+        }
+        HorizontalLayout {
+            alignment: start;
+            PillButton {
+                text: "Cerrar sesión";
+                primary: false;
+                clicked => {
+                    Api.logout();
+                }
+            }
+        }
+        Rectangle { height: 8px; }
+        Text {
+            text: "Acerca de";
+            font-size: 16px;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        Text {
+            text: "Swiftbeat \{State.version} · Software libre con licencia MIT. Reproducción mediante librespot. No está afiliado a Spotify.";
+            font-size: 13px;
+            color: Theme.subtext;
+            wrap: word-wrap;
+        }
+        Text {
+            text: "Código fuente en GitHub (clic aquí)";
+            font-size: 13px;
+            color: repo-ta.has-hover ? Theme.text : Theme.subtext;
+            repo-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    Api.open-url("https://github.com/EliseoUTRNG/Swiftbeat");
+                }
+            }
+        }
+        HorizontalLayout {
+            alignment: start;
+            AboutSlint {
+                width: 220px;
+            }
+        }
+    }
+    }
+}
+
+export component LoginScreen inherits Rectangle {
+    background: @linear-gradient(180deg, #1f1f1f 0%, #000000 100%);
+    VerticalLayout {
+        alignment: center;
+        HorizontalLayout {
+            alignment: center;
+            VerticalLayout {
+                width: 520px;
+                spacing: 14px;
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: center;
+                    Image {
+                        width: 48px;
+                        height: 48px;
+                        source: @image-url("../assets/swiftbeat.png");
+                    }
+                    Text {
+                        text: "Swiftbeat";
+                        font-size: 40px;
+                        font-weight: 800;
+                        color: Theme.text;
+                        vertical-alignment: center;
+                    }
+                }
+                Text {
+                    text: "Necesitas Spotify Premium y un Client ID propio (es gratis).";
+                    color: Theme.subtext;
+                    font-size: 15px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+                Rectangle { height: 8px; }
+                Text {
+                    text: "1. Abre el panel de desarrolladores y crea una app (clic aquí).";
+                    color: ta-link.has-hover ? Theme.accent : Theme.text;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                    ta-link := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            Api.open-url("https://developer.spotify.com/dashboard");
+                        }
+                    }
+                }
+                Text {
+                    text: "2. En «Redirect URIs» añade exactamente:  http://127.0.0.1:8989/login";
+                    color: Theme.text;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: "3. Marca «Web API», guarda y copia aquí el Client ID.";
+                    color: Theme.text;
+                    font-size: 14px;
+                    wrap: word-wrap;
+                }
+                Rectangle {
+                    height: 48px;
+                    border-radius: 6px;
+                    background: Theme.elevated;
+                    border-width: input.has-focus ? 2px : 1px;
+                    border-color: input.has-focus ? Theme.text : #878787;
+                    input := TextInput {
+                        x: 14px;
+                        width: parent.width - 28px;
+                        height: 100%;
+                        vertical-alignment: center;
+                        text <=> State.client-id;
+                        color: Theme.text;
+                        font-size: 15px;
+                        single-line: true;
+                        enabled: !State.busy;
+                    }
+                    if State.client-id == "": Text {
+                        x: 14px;
+                        text: "Client ID (32 caracteres)";
+                        color: Theme.muted;
+                        font-size: 15px;
+                    }
+                }
+                PillButton {
+                    text: State.busy ? "Conectando…" : "Iniciar sesión con Spotify";
+                    enabled: !State.busy && State.client-id.character-count >= 32;
+                    clicked => {
+                        Api.login(State.client-id);
+                    }
+                }
+                Text {
+                    text: State.status-text;
+                    color: Theme.subtext;
+                    font-size: 13px;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
+
+export component LoadingScreen inherits Rectangle {
+    background: Theme.bg;
+    VerticalLayout {
+        alignment: center;
+        spacing: 12px;
+        Text {
+            text: "Swiftbeat";
+            font-size: 36px;
+            font-weight: 800;
+            color: Theme.text;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: State.status-text;
+            font-size: 14px;
+            color: Theme.subtext;
+            horizontal-alignment: center;
+        }
+    }
+}

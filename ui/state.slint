@@ -1,0 +1,151 @@
+// Estructuras y globales compartidos con Rust.
+
+export struct TrackRow {
+    kind: int,          // 0 = canción, 1 = rebanada de la cabecera
+    index: int,
+    uri: string,
+    title: string,
+    artists: string,        // primer artista (los dos siguientes van aparte, como enlaces)
+    artist-uri: string,
+    artist2: string,
+    artist2-uri: string,
+    artist3: string,
+    artist3-uri: string,
+    more-artists: bool,
+    album: string,
+    album-uri: string,
+    duration: string,
+    image: string,
+    explicit: bool,
+}
+
+// kind: 0 álbum, 1 artista, 2 playlist, 3 canciones que te gustan, 4 canción
+export struct Card {
+    uri: string,
+    title: string,
+    subtitle: string,
+    image: string,
+    kind: int,
+}
+
+export struct Shelf {
+    title: string,
+    items: [Card],
+}
+
+export struct LyricLine {
+    start: int,
+    text: string,
+}
+
+export global State {
+    in-out property <int> screen;  // 0 cargando, 1 login, 2 app
+    in-out property <string> status-text;
+    in-out property <bool> busy;
+    in-out property <string> client-id;
+    in-out property <string> user-name;
+    in-out property <string> user-image;
+    in-out property <string> user-initial;
+    in-out property <string> version;
+
+    in-out property <int> page;  // 0 inicio, 1 buscar, 2 colección, 3 artista, 4 ajustes
+    in-out property <bool> loading;
+    in-out property <bool> can-back;
+    in-out property <bool> can-forward;
+    in-out property <string> toast;
+
+    in-out property <[Card]> library;
+    in-out property <int> library-filter: -1;
+
+    in-out property <string> greeting;
+    in-out property <[Card]> quick;
+    in-out property <[Shelf]> shelves;
+
+    in-out property <string> search-text;
+    in-out property <bool> has-top;
+    in-out property <Card> search-top;
+    in-out property <[TrackRow]> search-tracks;
+    in-out property <[Shelf]> search-shelves;
+
+    in-out property <string> coll-uri;
+    in-out property <string> coll-type;
+    in-out property <string> coll-title;
+    in-out property <string> coll-subtitle;
+    in-out property <string> coll-description;
+    in-out property <string> coll-image;
+    in-out property <bool> coll-liked;
+    in-out property <[TrackRow]> coll-rows;
+
+    in-out property <string> artist-uri;
+    in-out property <string> artist-name;
+    in-out property <string> artist-image;
+    in-out property <[TrackRow]> artist-top;
+    in-out property <[Shelf]> artist-shelves;
+
+    in-out property <string> np-uri;
+    in-out property <string> np-title;
+    in-out property <string> np-artists;
+    in-out property <string> np-artist-uri;
+    in-out property <string> np-album-uri;
+    in-out property <string> np-image;
+    in-out property <int> np-duration;
+    in-out property <int> np-position;
+    in-out property <bool> playing;
+    in-out property <string> ctx-uri;
+    in-out property <bool> shuffle;
+    in-out property <int> repeat;  // 0 no, 1 contexto, 2 canción
+    in-out property <float> volume: 0.7;
+    in-out property <int> liked-epoch;
+
+    in-out property <int> right-panel;  // 0 nada, 1 cola, 2 letra
+    in-out property <[TrackRow]> queue;
+    in-out property <[LyricLine]> lyrics;
+    in-out property <string> lyrics-status;
+    in-out property <int> lyrics-active: -1;
+    in-out property <[Card]> my-playlists;
+    in-out property <int> bitrate: 160;
+    in-out property <bool> normalise: true;
+}
+
+export global Api {
+    callback login(string);
+    callback logout();
+    callback navigate(int, string);
+    callback go-home();
+    callback go-search();
+    callback go-settings();
+    callback back();
+    callback forward();
+    callback search(string);
+    callback play-row(int, int);  // origen (0 colección, 1 búsqueda, 2 artista, 3 cola), índice
+    callback play-card(int, string);
+    callback toggle-play();
+    callback next();
+    callback prev();
+    callback seek(int);
+    callback set-volume(float);
+    callback toggle-shuffle();
+    callback cycle-repeat();
+    callback enqueue(int, int);
+    callback toggle-like(string);
+    pure callback is-liked(string, int) -> bool;
+    callback create-playlist();
+    callback add-to-playlist(int, int, string);
+    callback set-library-filter(int);
+    callback set-right-panel(int);
+    callback set-bitrate(int);
+    callback set-normalise(bool);
+    callback open-url(string);
+}
+
+export global Img {
+    in-out property <int> epoch;
+    pure callback get(string, int, int) -> image;
+    pure callback tint(string, int) -> color;
+}
+
+export global Fmt {
+    public pure function time(ms: int) -> string {
+        return "\{Math.floor(ms / 60000)}:\{Math.mod(Math.floor(ms / 1000), 60) < 10 ? "0" : ""}\{Math.mod(Math.floor(ms / 1000), 60)}";
+    }
+}

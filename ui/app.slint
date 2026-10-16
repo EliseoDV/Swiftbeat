@@ -1,0 +1,98 @@
+import { Theme } from "theme.slint";
+import { State, Api, Img, Fmt, TrackRow, Card, Shelf, LyricLine } from "state.slint";
+import { TopBar, Sidebar, PlayerBar, RightPanel } from "shell.slint";
+import { HomePage, SearchPage, CollectionPage, ArtistPage, SettingsPage, LoginScreen, LoadingScreen } from "pages.slint";
+
+export { State, Api, Img, TrackRow, Card, Shelf, LyricLine }
+
+export component AppWindow inherits Window {
+    title: "Swiftbeat";
+    icon: @image-url("../assets/swiftbeat.png");
+    preferred-width: 1280px;
+    preferred-height: 800px;
+    min-width: 900px;
+    min-height: 600px;
+    background: Theme.bg;
+    default-font-family: "Segoe UI";
+    default-font-size: 14px;
+
+    init => {
+        keys.focus();
+    }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                keys.focus();
+                return accept;
+            }
+            if State.screen != 2 {
+                return reject;
+            }
+            if event.text == " " {
+                Api.toggle-play();
+                return accept;
+            }
+            if event.modifiers.control && event.text == Key.RightArrow {
+                Api.next();
+                return accept;
+            }
+            if event.modifiers.control && event.text == Key.LeftArrow {
+                Api.prev();
+                return accept;
+            }
+            if event.modifiers.alt && event.text == Key.LeftArrow {
+                Api.back();
+                return accept;
+            }
+            if event.modifiers.alt && event.text == Key.RightArrow {
+                Api.forward();
+                return accept;
+            }
+            return reject;
+        }
+
+        if State.screen == 0: LoadingScreen { }
+        if State.screen == 1: LoginScreen { }
+        if State.screen == 2: VerticalLayout {
+            padding: 8px;
+            spacing: 8px;
+            TopBar { }
+            HorizontalLayout {
+                spacing: 8px;
+                vertical-stretch: 1;
+                Sidebar {
+                    width: root.width > 1150px ? 320px : 260px;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: Theme.panel;
+                    border-radius: 8px;
+                    clip: true;
+                    if State.page == 0: HomePage { }
+                    if State.page == 1: SearchPage { }
+                    if State.page == 2: CollectionPage { }
+                    if State.page == 3: ArtistPage { }
+                    if State.page == 4: SettingsPage { }
+                }
+                if State.right-panel != 0: RightPanel {
+                    width: 320px;
+                }
+            }
+            PlayerBar { }
+        }
+
+        if State.toast != "": Rectangle {
+            y: root.height - 140px;
+            width: toast-text.preferred-width + 32px;
+            height: 40px;
+            border-radius: 8px;
+            background: Theme.toast;
+            toast-text := Text {
+                text: State.toast;
+                color: #ffffff;
+                font-size: 14px;
+            }
+        }
+    }
+}
