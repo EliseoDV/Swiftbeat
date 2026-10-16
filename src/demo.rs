@@ -1,5 +1,5 @@
 //! Datos de ejemplo para revisar la interfaz sin cuenta (solo en debug).
-//! Uso: SWIFTBEAT_DEMO=<página> donde página es 0 inicio, 1 buscar, 2 colección, 3 artista, 4 ajustes.
+//! Uso: SWIFTBEAT_DEMO=<página> donde página es -1 login, 0 inicio, 1 buscar, 2 colección, 3 artista, 4 ajustes.
 
 use crate::{AppWindow, Card, LyricLine, State, TrackRow, ui};
 use slint::ComponentHandle;
@@ -43,6 +43,10 @@ fn track(i: usize) -> TrackRow {
 
 pub fn fill(app: &AppWindow, page: i32) {
     let st = app.global::<State>();
+    if page < 0 {
+        st.set_screen(1);
+        return;
+    }
     st.set_screen(2);
     st.set_page(page);
     st.set_user_name("Demo".into());

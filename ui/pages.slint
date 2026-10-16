@@ -615,69 +615,249 @@ export component SettingsPage inherits Rectangle {
     }
 }
 
-export component LoginScreen inherits Rectangle {
-    background: @linear-gradient(180deg, #1f1f1f 0%, #000000 100%);
+// Paso numerado de la guía para crear el Client ID.
+component Step inherits HorizontalLayout {
+    in property <int> number;
+    in property <string> title;
+    in property <string> body;
+    spacing: 14px;
     VerticalLayout {
-        alignment: center;
-        HorizontalLayout {
-            alignment: center;
-            VerticalLayout {
-                width: 520px;
-                spacing: 14px;
-                HorizontalLayout {
-                    spacing: 12px;
-                    alignment: center;
-                    Image {
-                        width: 48px;
-                        height: 48px;
-                        source: @image-url("../assets/swiftbeat.png");
+        alignment: start;
+        Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: 14px;
+            background: Theme.accent;
+            Text {
+                text: root.number;
+                color: #000000;
+                font-size: 14px;
+                font-weight: 700;
+            }
+        }
+    }
+    VerticalLayout {
+        spacing: 6px;
+        horizontal-stretch: 1;
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: 16px;
+            font-weight: 700;
+            wrap: word-wrap;
+        }
+        Text {
+            text: root.body;
+            color: Theme.subtext;
+            font-size: 14px;
+            wrap: word-wrap;
+        }
+        @children
+    }
+}
+
+component SmallButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 32px;
+    width: label.preferred-width + 28px;
+    border-radius: 16px;
+    background: !root.enabled ? #2a2a2a : ta.has-hover ? #ffffff2e : #ffffff1a;
+    label := Text {
+        text: root.text;
+        color: root.enabled ? Theme.text : Theme.muted;
+        font-size: 13px;
+        font-weight: 600;
+    }
+    ta := TouchArea {
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if root.enabled {
+                root.clicked();
+            }
+        }
+    }
+}
+
+export component LoginScreen inherits Rectangle {
+    property <bool> copied;
+    background: @linear-gradient(180deg, #1f1f1f 0%, #000000 100%);
+
+    copied-timer := Timer {
+        interval: 2s;
+        running: false;
+        triggered => {
+            root.copied = false;
+            self.running = false;
+        }
+    }
+
+    HorizontalLayout {
+        padding: 40px;
+        spacing: 40px;
+
+        // Guía paso a paso.
+        Rectangle {
+            horizontal-stretch: 1;
+            background: #ffffff0a;
+            border-radius: 12px;
+            sv := ScrollView {
+                content-width: sv.visible-width;
+                content-height: guide.preferred-height;
+                guide := VerticalLayout {
+                    width: sv.visible-width;
+                    padding: 28px;
+                    spacing: 22px;
+                    Text {
+                        text: "Cómo crear tu Client ID";
+                        color: Theme.text;
+                        font-size: 24px;
+                        font-weight: 800;
                     }
                     Text {
-                        text: "Swiftbeat";
-                        font-size: 40px;
-                        font-weight: 800;
-                        color: Theme.text;
-                        vertical-alignment: center;
+                        text: "Swiftbeat se conecta a Spotify con un Client ID gratuito que creas tú. Solo se hace una vez y tarda unos 3 minutos. Necesitas una cuenta de Spotify Premium.";
+                        color: Theme.subtext;
+                        font-size: 14px;
+                        wrap: word-wrap;
                     }
-                }
-                Text {
-                    text: "Necesitas Spotify Premium y un Client ID propio (es gratis).";
-                    color: Theme.subtext;
-                    font-size: 15px;
-                    horizontal-alignment: center;
-                    wrap: word-wrap;
-                }
-                Rectangle { height: 8px; }
-                Text {
-                    text: "1. Abre el panel de desarrolladores y crea una app (clic aquí).";
-                    color: ta-link.has-hover ? Theme.accent : Theme.text;
-                    font-size: 14px;
-                    wrap: word-wrap;
-                    ta-link := TouchArea {
-                        mouse-cursor: pointer;
-                        clicked => {
-                            Api.open-url("https://developer.spotify.com/dashboard");
+                    Step {
+                        number: 1;
+                        title: "Abre el panel de desarrolladores de Spotify";
+                        body: "Inicia sesión con tu cuenta Premium. Si es la primera vez que entras, acepta los términos de desarrollador.";
+                        HorizontalLayout {
+                            alignment: start;
+                            SmallButton {
+                                text: "Abrir developer.spotify.com/dashboard";
+                                clicked => {
+                                    Api.open-url("https://developer.spotify.com/dashboard");
+                                }
+                            }
                         }
                     }
+                    Step {
+                        number: 2;
+                        title: "Crea una app";
+                        body: "Pulsa «Create app» y rellena el formulario:\n•  App name: cualquier nombre sin la palabra «Spotify», por ejemplo «Mi Swiftbeat».\n•  App description: cualquier texto, por ejemplo «Cliente personal».\n•  Website: déjalo vacío.";
+                    }
+                    Step {
+                        number: 3;
+                        title: "Añade la Redirect URI";
+                        body: "En «Redirect URIs» pega esta dirección y pulsa «Add». Tiene que ser exactamente igual: con 127.0.0.1 (no «localhost») y sin barra al final.";
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            Rectangle {
+                                width: uri.preferred-width + 24px;
+                                height: 32px;
+                                border-radius: 6px;
+                                background: #000000;
+                                border-width: 1px;
+                                border-color: #ffffff26;
+                                uri := TextInput {
+                                    x: 12px;
+                                    width: self.preferred-width;
+                                    height: 100%;
+                                    text: "http://127.0.0.1:8989/login";
+                                    read-only: true;
+                                    single-line: true;
+                                    color: Theme.text;
+                                    font-size: 14px;
+                                    font-family: "Consolas";
+                                    vertical-alignment: center;
+                                }
+                            }
+                            SmallButton {
+                                text: root.copied ? "¡Copiado!" : "Copiar";
+                                clicked => {
+                                    uri.select-all();
+                                    uri.copy();
+                                    uri.clear-selection();
+                                    root.copied = true;
+                                    copied-timer.running = true;
+                                }
+                            }
+                        }
+                    }
+                    Step {
+                        number: 4;
+                        title: "Marca «Web API» y guarda";
+                        body: "En «Which API/SDKs are you planning to use?» marca «Web API». Acepta los términos y pulsa «Save».";
+                    }
+                    Step {
+                        number: 5;
+                        title: "Copia tu Client ID";
+                        body: "Dentro de tu app entra en «Settings» y copia el «Client ID» (32 letras y números). El «Client secret» no hace falta: no lo compartas con nadie.";
+                    }
+                    Step {
+                        number: 6;
+                        title: "Pégalo aquí e inicia sesión";
+                        body: "El navegador se abrirá dos veces para que aceptes: una vez para tu app y otra para la reproducción. A partir de ahí Swiftbeat recuerda tu sesión.";
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: #ffffff1a;
+                    }
+                    Text {
+                        text: "¿Algo falló?";
+                        color: Theme.text;
+                        font-size: 15px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "•  Si el navegador muestra «INVALID_CLIENT: Invalid redirect URI», la dirección del paso 3 no coincide. Corrígela en «Settings» de tu app y vuelve a intentarlo.\n•  Si dice que tu cuenta no tiene acceso, comprueba que entraste en el panel con la misma cuenta Premium con la que inicias sesión.\n•  Tu Client ID es personal: solo funciona con tu cuenta (y con hasta 5 cuentas que añadas en «User Management»). Se guarda únicamente en este equipo.";
+                        color: Theme.subtext;
+                        font-size: 13px;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        // Formulario de inicio de sesión.
+        VerticalLayout {
+            width: 360px;
+            alignment: center;
+            spacing: 14px;
+            HorizontalLayout {
+                spacing: 12px;
+                alignment: center;
+                Image {
+                    width: 48px;
+                    height: 48px;
+                    source: @image-url("../assets/swiftbeat.png");
                 }
                 Text {
-                    text: "2. En «Redirect URIs» añade exactamente:  http://127.0.0.1:8989/login";
+                    text: "Swiftbeat";
+                    font-size: 40px;
+                    font-weight: 800;
                     color: Theme.text;
-                    font-size: 14px;
-                    wrap: word-wrap;
+                    vertical-alignment: center;
                 }
-                Text {
-                    text: "3. Marca «Web API», guarda y copia aquí el Client ID.";
-                    color: Theme.text;
-                    font-size: 14px;
-                    wrap: word-wrap;
-                }
+            }
+            Text {
+                text: "Tu música de Spotify, sin el peso.";
+                color: Theme.subtext;
+                font-size: 15px;
+                horizontal-alignment: center;
+            }
+            Rectangle { height: 12px; }
+            Text {
+                text: "Client ID";
+                color: Theme.text;
+                font-size: 14px;
+                font-weight: 700;
+            }
+            HorizontalLayout {
+                spacing: 8px;
                 Rectangle {
                     height: 48px;
+                    horizontal-stretch: 1;
                     border-radius: 6px;
                     background: Theme.elevated;
                     border-width: input.has-focus ? 2px : 1px;
                     border-color: input.has-focus ? Theme.text : #878787;
+                    clip: true;
                     input := TextInput {
                         x: 14px;
                         width: parent.width - 28px;
@@ -691,25 +871,36 @@ export component LoginScreen inherits Rectangle {
                     }
                     if State.client-id == "": Text {
                         x: 14px;
-                        text: "Client ID (32 caracteres)";
+                        text: "Pega aquí tu Client ID";
                         color: Theme.muted;
                         font-size: 15px;
                     }
                 }
-                PillButton {
-                    text: State.busy ? "Conectando…" : "Iniciar sesión con Spotify";
-                    enabled: !State.busy && State.client-id.character-count >= 32;
-                    clicked => {
-                        Api.login(State.client-id);
+                VerticalLayout {
+                    alignment: center;
+                    SmallButton {
+                        text: "Pegar";
+                        enabled: !State.busy;
+                        clicked => {
+                            input.select-all();
+                            input.paste();
+                        }
                     }
                 }
-                Text {
-                    text: State.status-text;
-                    color: Theme.subtext;
-                    font-size: 13px;
-                    horizontal-alignment: center;
-                    wrap: word-wrap;
+            }
+            PillButton {
+                text: State.busy ? "Conectando…" : "Iniciar sesión con Spotify";
+                enabled: !State.busy && State.client-id.character-count >= 32;
+                clicked => {
+                    Api.login(State.client-id);
                 }
+            }
+            Text {
+                text: State.status-text != "" ? State.status-text : "¿Aún no tienes Client ID? Sigue los pasos de la izquierda.";
+                color: Theme.subtext;
+                font-size: 13px;
+                horizontal-alignment: center;
+                wrap: word-wrap;
             }
         }
     }
