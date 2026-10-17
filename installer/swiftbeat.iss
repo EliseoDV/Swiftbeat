@@ -3,12 +3,12 @@
 
 #define AppName "Swiftbeat"
 #ifndef AppVersion
-  #define AppVersion "0.1.1"
+  #define AppVersion "0.1.2"
 #endif
 #define AppExe "swiftbeat.exe"
 ; Debe coincidir con APP_USER_MODEL_ID en src/main.rs.
 #define AppUserModelId "Swiftbeat.Swiftbeat"
-#define AppUrl "https://github.com/EliseoUTRNG/Swiftbeat"
+#define AppUrl "https://github.com/EliseoDV/Swiftbeat"
 
 [Setup]
 AppId={{2285E3FA-25B3-44AF-BAEE-D016F1FB3189}

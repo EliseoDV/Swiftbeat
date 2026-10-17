@@ -1,9 +1,9 @@
 [package]
 name = "swiftbeat"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Cliente de escritorio ligero para Spotify"
-repository = "https://github.com/EliseoUTRNG/Swiftbeat"
+repository = "https://github.com/EliseoDV/Swiftbeat"
 license = "MIT"
 
 [dependencies]

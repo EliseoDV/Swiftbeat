@@ -16,7 +16,7 @@ Interfaz familiar, una fracción de los recursos.</p>
 
 ## Instalación
 
-1. Descarga `Swiftbeat-Setup-x.y.z.exe` desde [Releases](https://github.com/EliseoUTRNG/Swiftbeat/releases).
+1. Descarga `Swiftbeat-Setup-x.y.z.exe` desde [Releases](https://github.com/EliseoDV/Swiftbeat/releases).
 2. Ejecútalo. Se instala solo para tu usuario, sin permisos de administrador, y crea los accesos directos del escritorio y del menú Inicio.
 3. Para anclarla a la barra de tareas: con la app abierta, clic derecho en su icono y **Anclar a la barra de tareas**.
 
