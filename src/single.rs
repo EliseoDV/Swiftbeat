@@ -9,6 +9,7 @@ mod win {
     unsafe extern "system" {
         fn CreateMutexW(attributes: *const c_void, initial_owner: i32, name: *const u16) -> isize;
         fn GetLastError() -> u32;
+        fn CloseHandle(handle: isize) -> i32;
     }
 
     #[link(name = "user32")]
@@ -26,13 +27,26 @@ mod win {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
 
-    pub fn acquire() -> bool {
+    pub fn acquire(wait: bool) -> bool {
         let name = wide("Local\\Swiftbeat.SingleInstance");
-        // SAFETY: `name` es UTF-16 terminado en cero. El mutex se mantiene abierto
-        // (a propósito) hasta que termina el proceso.
-        let (handle, err) = unsafe { (CreateMutexW(std::ptr::null(), 0, name.as_ptr()), GetLastError()) };
-        if handle == 0 || err != ERROR_ALREADY_EXISTS {
-            return true;
+        // Al reiniciar, la instancia anterior tarda un momento en cerrarse.
+        let tries = if wait { 50 } else { 1 };
+        for i in 0..tries {
+            // SAFETY: `name` es UTF-16 terminado en cero. El mutex se mantiene abierto
+            // (a propósito) hasta que termina el proceso.
+            let (handle, err) = unsafe { (CreateMutexW(std::ptr::null(), 0, name.as_ptr()), GetLastError()) };
+            if handle == 0 || err != ERROR_ALREADY_EXISTS {
+                return true;
+            }
+            // Hay que soltar este identificador: mientras siga abierto, el mutex
+            // existe y nunca se podría adquirir.
+            // SAFETY: `handle` es un identificador válido devuelto por CreateMutexW.
+            unsafe {
+                CloseHandle(handle);
+            }
+            if i + 1 < tries {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
         }
         let class = wide("Window Class");
         let title = wide("Swiftbeat");
@@ -50,14 +64,19 @@ mod win {
     }
 }
 
-/// Devuelve `false` si ya había otra instancia (y la ha traído al frente).
-pub fn acquire() -> bool {
+/// Argumento con el que se abre la instancia nueva al pulsar «Reiniciar».
+pub const RESTART_ARG: &str = "--restart";
+
+/// Devuelve `false` si ya había otra instancia (y la ha traído al frente). Con
+/// `wait`, espera unos segundos a que la otra se cierre antes de rendirse.
+pub fn acquire(wait: bool) -> bool {
     #[cfg(windows)]
     {
-        win::acquire()
+        win::acquire(wait)
     }
     #[cfg(not(windows))]
     {
+        let _ = wait;
         true
     }
 }

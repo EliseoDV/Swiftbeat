@@ -75,15 +75,16 @@ cargo run
 2. Crea y sube la etiqueta: `git tag v0.2.0 && git push origin v0.2.0`.
 3. GitHub Actions compila, genera el instalador y lo adjunta a la release (ver `.github/workflows/release.yml`).
 
-El logo se regenera con `installer\make-icon.ps1`.
+El logo y sus reglas de uso están en `IconInfo/` (ver `IconInfo/GUIA-DE-MARCA.md`). `installer\make-icon.ps1` copia a `assets/` el icono de la app desde `IconInfo/windows/`.
 
 ## Cómo consigue ser ligera
 
 - **Sin navegador embebido.** UI nativa con Slint, dibujada por software: no carga controladores de GPU y solo repinta lo que cambia.
 - **Listas virtualizadas.** Una playlist de 5.000 canciones solo crea las filas visibles.
-- **Imágenes bajo demanda.** Solo se descargan las portadas visibles, reducidas al tamaño en pantalla, en una caché LRU con un límite de 48 MB.
+- **Imágenes bajo demanda.** Solo se descargan las portadas visibles, reducidas al tamaño en pantalla, en una caché LRU con un límite de 96 MB.
 - **Metadatos por lotes.** Álbumes, artistas y playlists se piden en bloques de 100.
-- **Runtime pequeño.** 2 hilos de Tokio más el hilo de audio; nada se ejecuta a 60 fps.
+- **Runtime pequeño.** 2 hilos de Tokio más el hilo de audio; nada se ejecuta a 60 fps (las únicas animaciones continuas son los indicadores de carga, y solo mientras se ven).
+- **Reproducción vigilada.** Si una canción no empieza en 10 s, deja de avanzar o se corta, Swiftbeat reconecta la sesión y la retoma donde iba; tras suspender el equipo también reconecta antes de reproducir.
 - **Binario optimizado.** LTO completo, `codegen-units = 1`, `panic = "abort"` y sin símbolos.
 
 ## Arquitectura

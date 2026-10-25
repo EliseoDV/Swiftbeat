@@ -47,7 +47,8 @@ fn set_app_id() {}
 fn main() -> anyhow::Result<()> {
     // Antes que el log, para no vaciar el de la instancia que ya está abierta.
     let demo = cfg!(debug_assertions) && std::env::var_os("SWIFTBEAT_DEMO").is_some();
-    if !demo && !single::acquire() {
+    let restarting = std::env::args().any(|a| a == single::RESTART_ARG);
+    if !demo && !single::acquire(restarting) {
         return Ok(());
     }
     logger::init();

@@ -1,0 +1,32 @@
+{
+  "brand": "Swiftbeat",
+  "tagline": "Cliente de escritorio ligero para Spotify",
+  "brief": "Un cliente de Spotify para Windows escrito en Rust: interfaz familiar con una fracción de los recursos (unos 40 MB frente a 400–800 MB). El logo debe sentirse rápido, ligero y minimalista, conservar la S del icono anterior y no parecerse a Spotify.",
+  "adjectives": ["rápido", "ligero", "minimalista"],
+  "criteria": "Éxito: se reconoce a 16 px en la barra de tareas, funciona en un solo color, se distingue del verde y las ondas de Spotify.",
+  "mockups": ["app-icon", "favicon-tab", "website", "readme", "social", "sticker"],
+  "nav": ["Funciones", "Descargar", "GitHub"],
+  "brand_color": "#8486c4",
+  "greyscale": false,
+  "final": true,
+  "designer": "Swiftbeat",
+  "concepts": [
+    {
+      "name": "S calada",
+      "symbol": "../svg/swiftbeat-symbol-color.svg",
+      "lockup": "../svg/swiftbeat-horizontal-color.svg",
+      "stacked": "../svg/swiftbeat-stacked-color.svg",
+      "symbol_on_tile": "../svg/swiftbeat-symbol-white.svg",
+      "lockup_on_dark": "../svg/swiftbeat-horizontal-color-dark.svg",
+      "tile_color": "#8486c4",
+      "idea": "Un botón de play macizo con la S de Swiftbeat recortada dentro, inclinada hacia delante.",
+      "rationale": [
+        "Une la S del icono anterior con el gesto universal de reproducir",
+        "La S oblicua hace que el triángulo avance: velocidad sin adornos",
+        "Lavanda de la propia interfaz, lejos del verde de Spotify",
+        "Corte simplificado para 16–24 px en la barra de tareas"
+      ]
+    }
+  ],
+  "recommendation": "Usar el símbolo en lavanda como icono de la app y el lockup horizontal en el README y la web."
+}

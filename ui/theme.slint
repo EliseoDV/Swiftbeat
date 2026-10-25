@@ -1,17 +1,55 @@
-// Paleta oscura inspirada en el cliente de escritorio.
+// Paleta oscura de Swiftbeat: neutros con un leve tinte medianoche y la lavanda
+// de la marca (IconInfo/GUIA-DE-MARCA.md) como único acento. Sin verde Spotify.
 export global Theme {
-    out property <color> bg: #000000;
-    out property <color> panel: #121212;
-    out property <color> card-hover: #1f1f1f;
-    out property <color> elevated: #1f1f1f;
-    out property <color> elevated-hover: #2a2a2a;
-    out property <color> row-hover: #ffffff1a;
-    out property <color> row-active: #ffffff24;
-    out property <color> text: #ffffff;
-    out property <color> subtext: #b3b3b3;
-    out property <color> muted: #6a6a6a;
+    // Superficies, de la más profunda a la más elevada.
+    out property <color> bg: #09090f;
+    out property <color> panel: #121219;
+    out property <color> surface: #191922;
+    out property <color> elevated: #20202b;
+    out property <color> elevated-hover: #2a2a37;
+    out property <color> card-hover: #1d1d28;
+    out property <color> row-hover: #ffffff0f;
+    out property <color> row-active: #8486c42e;
+    out property <color> border: #ffffff12;
+    out property <color> border-strong: #ffffff26;
+    out property <color> scrim: #09090fcc;
+
+    // Texto. subtext y muted cumplen 4,5:1 sobre panel.
+    out property <color> text: #f4f4f8;
+    out property <color> subtext: #a7a7ba;
+    out property <color> muted: #7d7d93;
+    out property <color> disabled: #4a4a5a;
+
+    // Marca y acento.
+    out property <color> brand: #8486c4;
     out property <color> accent: #8486c4;
     out property <color> accent-hover: #9a9cd3;
-    out property <color> track: #4d4d4d;
-    out property <color> toast: #2e77d0;
+    out property <color> accent-soft: #8486c424;
+    out property <color> on-accent: #0b0b14;
+    out property <color> danger: #ef7a7a;
+
+    // Controles.
+    out property <color> track: #ffffff24;
+    out property <color> toast: #262633;
+    out property <color> liked-from: #4b4d9a;
+    out property <color> liked-to: #a9abe0;
+
+    // Radios.
+    out property <length> radius-panel: 12px;
+    out property <length> radius-card: 8px;
+    out property <length> radius-row: 6px;
+    out property <length> radius-cover: 6px;
+
+    // Tamaños de texto.
+    out property <length> font-xs: 12px;
+    out property <length> font-sm: 13px;
+    out property <length> font-md: 14px;
+    out property <length> font-lg: 16px;
+    out property <length> font-section: 20px;
+    out property <length> font-title: 24px;
+    out property <length> font-display: 32px;
+
+    // Duraciones de las transiciones.
+    out property <duration> fast: 120ms;
+    out property <duration> normal: 180ms;
 }

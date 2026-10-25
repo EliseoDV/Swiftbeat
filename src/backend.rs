@@ -23,11 +23,20 @@ use std::{
         Arc, RwLock,
         atomic::{AtomicU64, Ordering},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 pub type Liked = Arc<RwLock<HashSet<String>>>;
+
+/// Tiempo máximo que puede tardar una canción en empezar a sonar.
+const LOAD_TIMEOUT: Duration = Duration::from_secs(10);
+/// Tiempo máximo sin avisos de avance mientras suena (llegan cada segundo).
+const STALL_TIMEOUT: Duration = Duration::from_secs(12);
+/// Tiempo máximo para conectar una sesión nueva.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+/// Un hueco así entre dos ticks de 500 ms indica que el equipo estuvo suspendido.
+const SLEEP_GAP: Duration = Duration::from_secs(20);
 
 #[derive(Clone, PartialEq, Debug)]
 enum Route {
@@ -68,6 +77,7 @@ pub enum Cmd {
     RightPanel(i32),
     Bitrate(u16),
     Normalise(bool),
+    Restart,
     // Internas
     Player(PlayerEvent),
     Page(u64, Page),
@@ -77,6 +87,8 @@ pub enum Cmd {
     Lyrics(String, Result<Vec<(i32, String)>, String>),
     PlaylistCreated(CardInfo),
     Toast(String),
+    /// El vigilante detectó que la reproducción se atascó.
+    Recover(&'static str),
     Tick,
 }
 
@@ -140,6 +152,9 @@ struct Backend {
     http: reqwest::Client,
     cfg: Config,
     cfg_dirty: bool,
+    /// Calidad y normalización con las que arrancó el reproductor; si los ajustes
+    /// difieren, la UI ofrece reiniciar.
+    applied: (u16, bool),
     svc: Option<Services>,
     history: Vec<Route>,
     hist_pos: usize,
@@ -164,6 +179,17 @@ struct Backend {
     toast_until: Option<Instant>,
     unavailable_streak: u32,
     ticks: u32,
+    /// Intentos de recuperar `recover_uri`. Se cuentan por canción para no entrar
+    /// en bucle con una que siempre se corta en el mismo punto.
+    recoveries: u32,
+    recover_uri: String,
+    /// Recuperaciones seguidas sin que nada llegue a sonar.
+    fail_streak: u32,
+    recover_pending: bool,
+    /// La sesión puede estar muerta aunque librespot no lo sepa (el equipo
+    /// estuvo suspendido o el reloj saltó): se reconecta antes de usarla.
+    session_suspect: bool,
+    last_wall: SystemTime,
 }
 
 fn sender(tx: &UnboundedSender<Cmd>) -> impl Fn(Cmd) + Clone + 'static {
@@ -227,8 +253,10 @@ pub fn bind(ui: &AppWindow, tx: &UnboundedSender<Cmd>, liked: Liked) {
     api.on_set_right_panel(move |p| f(Cmd::RightPanel(p)));
     let f = s.clone();
     api.on_set_bitrate(move |b| f(Cmd::Bitrate(b.clamp(96, 320) as u16)));
-    let f = s;
+    let f = s.clone();
     api.on_set_normalise(move |n| f(Cmd::Normalise(n)));
+    let f = s;
+    api.on_restart(move || f(Cmd::Restart));
     api.on_is_liked(move |uri, _| liked.read().map(|l| l.contains(uri.as_str())).unwrap_or(false));
     api.on_open_url(|url| {
         let _ = open::that_detached(url.as_str());
@@ -242,6 +270,7 @@ pub async fn run(ui: Ui, tx: UnboundedSender<Cmd>, mut rx: UnboundedReceiver<Cmd
         http,
         cfg: Config::load(),
         cfg_dirty: false,
+        applied: (0, false),
         svc: None,
         history: Vec::new(),
         hist_pos: 0,
@@ -266,7 +295,14 @@ pub async fn run(ui: Ui, tx: UnboundedSender<Cmd>, mut rx: UnboundedReceiver<Cmd
         toast_until: None,
         unavailable_streak: 0,
         ticks: 0,
+        recoveries: 0,
+        recover_uri: String::new(),
+        fail_streak: 0,
+        recover_pending: false,
+        session_suspect: false,
+        last_wall: SystemTime::now(),
     };
+    b.applied = (b.cfg.bitrate, b.cfg.normalise);
     b.init_ui();
     b.startup().await;
 
@@ -438,25 +474,88 @@ impl Backend {
         self.screen(1, "Sesión cerrada.");
     }
 
-    /// Reconecta la sesión de librespot si se cayó (red, suspensión del equipo…).
+    /// Reconecta la sesión de librespot si se cayó (red, suspensión del equipo…)
+    /// y vuelve a pedir la canción actual, cuya carga quedó ligada a la anterior.
     async fn ensure_session(&mut self) {
-        let Some(svc) = &mut self.svc else { return };
-        if !svc.session.is_invalid() {
+        let Some(svc) = &self.svc else { return };
+        if !svc.session.is_invalid() && !self.session_suspect {
             return;
         }
-        let Some(creds) = svc.cache.credentials() else { return };
+        if self.reconnect().await {
+            let pb = self.pb();
+            if pb.current.is_some() {
+                let play = pb.playing;
+                pb.reload(play);
+                self.push_playstate();
+            }
+        }
+    }
+
+    /// Crea una sesión nueva y se la pasa al reproductor y a la Web API.
+    async fn reconnect(&mut self) -> bool {
+        let Some(svc) = &mut self.svc else { return false };
+        let Some(creds) = svc.cache.credentials() else { return false };
         log::info!("reconectando la sesión");
         let session = Session::new(SessionConfig::default(), Some(svc.cache.clone()));
-        match session.connect(creds, true).await {
-            Ok(()) => {
+        let error = match tokio::time::timeout(CONNECT_TIMEOUT, session.connect(creds, true)).await {
+            Ok(Ok(())) => {
                 svc.playback.set_session(session.clone());
                 svc.api.set_session(session.clone());
-                svc.session = session;
+                let old = std::mem::replace(&mut svc.session, session);
+                old.shutdown();
+                self.session_suspect = false;
+                return true;
             }
-            Err(e) => {
-                log::error!("reconexión: {e}");
-                self.toast("Sin conexión con Spotify");
-            }
+            Ok(Err(e)) => e.to_string(),
+            Err(_) => "tiempo agotado".to_string(),
+        };
+        log::error!("reconexión: {error}");
+        self.toast("Sin conexión con Spotify. Reintentando…");
+        false
+    }
+
+    /// La canción actual no arranca o dejó de avanzar: reconecta y la vuelve a
+    /// pedir donde se quedó. Si sigue sin sonar, salta a la siguiente y, al final,
+    /// se rinde para no quedarse en bucle.
+    async fn recover(&mut self, why: &str) {
+        self.recover_pending = false;
+        let Some(svc) = &self.svc else { return };
+        let pb = &svc.playback;
+        let Some(uri) = pb.current.as_ref().map(|t| t.uri.clone()) else { return };
+        if !pb.playing {
+            return;
+        }
+        let near_end = pb.duration_ms() > 0 && pb.raw_position_ms() + 3000 >= pb.duration_ms();
+        if uri != self.recover_uri {
+            self.recover_uri = uri;
+            self.recoveries = 0;
+        }
+        self.recoveries += 1;
+        self.fail_streak += 1;
+        log::warn!("reproducción atascada ({why}), intento {} ({} seguidos)", self.recoveries, self.fail_streak);
+        if self.fail_streak > 6 {
+            self.fail_streak = 0;
+            self.pb().stop();
+            self.push_playstate();
+            self.toast("No se pudo reproducir. Revisa tu conexión.");
+            return;
+        }
+        self.reconnect().await;
+        if near_end || self.recoveries > 2 {
+            // Ya había terminado (se perdió el aviso de fin) o no hay forma de que suene.
+            self.pb().next(true);
+            self.after_track_change();
+        } else {
+            self.pb().reload(true);
+            self.push_playstate();
+        }
+    }
+
+    /// Pide una recuperación sin encolar varias a la vez.
+    fn request_recover(&mut self, why: &'static str) {
+        if !self.recover_pending {
+            self.recover_pending = true;
+            let _ = self.tx.send(Cmd::Recover(why));
         }
     }
 
@@ -474,6 +573,7 @@ impl Backend {
             Cmd::Logout => self.logout(),
             Cmd::Tick => self.tick(),
             Cmd::Toast(msg) => self.toast(msg),
+            Cmd::Recover(why) => self.recover(why).await,
             _ if self.svc.is_none() => {}
             Cmd::Navigate(kind, uri) => self.navigate_to(kind, uri),
             Cmd::Home => self.navigate(Route::Home),
@@ -578,14 +678,15 @@ impl Backend {
                 self.cfg.bitrate = b;
                 self.cfg.save();
                 self.ui.state(move |st| st.set_bitrate(b as i32));
-                self.toast("La calidad se aplicará al reiniciar Swiftbeat");
+                self.push_restart_needed();
             }
             Cmd::Normalise(n) => {
                 self.cfg.normalise = n;
                 self.cfg.save();
                 self.ui.state(move |st| st.set_normalise(n));
-                self.toast("Se aplicará al reiniciar Swiftbeat");
+                self.push_restart_needed();
             }
+            Cmd::Restart => self.restart(),
             Cmd::Player(ev) => self.player_event(ev),
             Cmd::Page(gen_id, page) => self.page_loaded(gen_id, page),
             Cmd::Library(data) => self.library_loaded(data),
@@ -600,6 +701,38 @@ impl Backend {
                 self.toast("Playlist creada");
             }
         }
+    }
+
+    fn push_restart_needed(&self) {
+        let needed = (self.cfg.bitrate, self.cfg.normalise) != self.applied;
+        self.ui.state(move |st| st.set_restart_needed(needed));
+    }
+
+    /// Abre una instancia nueva y cierra esta. La nueva espera a que esta suelte
+    /// la instancia única (ver `single::acquire`).
+    fn restart(&mut self) {
+        self.cfg.save();
+        self.cfg_dirty = false;
+        if let Some(svc) = &mut self.svc {
+            svc.playback.stop();
+        }
+        let exe = match std::env::current_exe() {
+            Ok(exe) => exe,
+            Err(e) => {
+                log::error!("reinicio: {e}");
+                self.toast("No se pudo reiniciar. Cierra y abre Swiftbeat.");
+                return;
+            }
+        };
+        if let Err(e) = std::process::Command::new(exe).arg(crate::single::RESTART_ARG).spawn() {
+            log::error!("reinicio: {e}");
+            self.toast("No se pudo reiniciar. Cierra y abre Swiftbeat.");
+            return;
+        }
+        log::info!("reiniciando");
+        self.ui.run(|_| {
+            let _ = slint::quit_event_loop();
+        });
     }
 
     fn pb(&mut self) -> &mut Playback {
@@ -630,10 +763,28 @@ impl Backend {
             self.cfg.save();
             self.cfg_dirty = false;
         }
+        let now = SystemTime::now();
+        if now.duration_since(self.last_wall).is_ok_and(|gap| gap > SLEEP_GAP) {
+            log::info!("el equipo estuvo suspendido: se reconectará la sesión");
+            self.session_suspect = true;
+        }
+        self.last_wall = now;
         let Some(svc) = &self.svc else { return };
         if !svc.playback.playing {
             return;
         }
+        let pb = &svc.playback;
+        if pb.current.is_some() {
+            if !pb.started && pb.load_at.elapsed() > LOAD_TIMEOUT {
+                self.request_recover("la canción no empieza");
+                return;
+            }
+            if pb.started && pb.progress_at.elapsed() > STALL_TIMEOUT {
+                self.request_recover("el audio no avanza");
+                return;
+            }
+        }
+        let Some(svc) = &self.svc else { return };
         let pos = svc.playback.position_ms();
         let mut active = self.lyrics_active;
         if self.right_panel == 2 && self.lyrics.first().is_some_and(|l| l.0 >= 0) {
@@ -1015,29 +1166,52 @@ impl Backend {
         });
     }
 
+    /// Recuperaciones ya intentadas con la canción que suena.
+    fn current_recoveries(&self) -> u32 {
+        match self.svc.as_ref().and_then(|s| s.playback.current.as_ref()) {
+            Some(t) if t.uri == self.recover_uri => self.recoveries,
+            _ => 0,
+        }
+    }
+
     fn player_event(&mut self, ev: PlayerEvent) {
+        let tried = self.current_recoveries();
         let Some(svc) = &mut self.svc else { return };
         let pb = &mut svc.playback;
         match ev {
             PlayerEvent::Playing { track_id, position_ms, .. } if pb.is_current(&track_id) => {
                 self.unavailable_streak = 0;
+                self.fail_streak = 0;
                 pb.playing = true;
+                pb.started = true;
+                pb.progress_at = Instant::now();
                 pb.set_pos(position_ms);
                 self.push_playstate();
             }
             PlayerEvent::Paused { track_id, position_ms, .. } if pb.is_current(&track_id) => {
                 pb.playing = false;
+                pb.started = true;
                 pb.set_pos(position_ms);
                 self.push_playstate();
             }
             PlayerEvent::Seeked { track_id, position_ms, .. }
             | PlayerEvent::PositionCorrection { track_id, position_ms, .. }
+            | PlayerEvent::PositionChanged { track_id, position_ms, .. }
                 if pb.is_current(&track_id) =>
             {
+                pb.progress_at = Instant::now();
                 pb.set_pos(position_ms);
             }
             PlayerEvent::TimeToPreloadNextTrack { .. } => pb.preload_next(),
             PlayerEvent::EndOfTrack { track_id, .. } if pb.is_current(&track_id) => {
+                // librespot también avisa de «fin» cuando la descarga falla a mitad
+                // de canción. En ese caso se recupera donde iba en vez de saltarla.
+                let early = pb.started && pb.duration_ms() > 0 && pb.position_ms() + 5000 < pb.duration_ms();
+                if early && tried < 2 {
+                    log::warn!("fin prematuro en {} de {} ms", pb.position_ms(), pb.duration_ms());
+                    self.request_recover("la canción se cortó");
+                    return;
+                }
                 pb.next(true);
                 self.after_track_change();
             }
@@ -1047,6 +1221,11 @@ impl Backend {
                     pb.stop();
                     self.push_playstate();
                     self.toast("No se pudo reproducir. Revisa tu conexión o tu cuenta Premium.");
+                    return;
+                }
+                if self.unavailable_streak == 2 {
+                    // Dos seguidas no suele ser casualidad: probablemente la sesión murió.
+                    self.request_recover("canciones no disponibles");
                     return;
                 }
                 pb.next(true);
@@ -1061,6 +1240,7 @@ impl Backend {
         let Some(svc) = &self.svc else { return };
         let pb = &svc.playback;
         let playing = pb.playing;
+        let buffering = pb.buffering();
         let pos = pb.position_ms() as i32;
         let shuffle = pb.shuffle;
         let repeat = match pb.repeat {
@@ -1071,6 +1251,7 @@ impl Backend {
         let ctx = pb.context_uri.clone();
         self.ui.state(move |st| {
             st.set_playing(playing);
+            st.set_buffering(buffering);
             st.set_np_position(pos);
             st.set_shuffle(shuffle);
             st.set_repeat(repeat);

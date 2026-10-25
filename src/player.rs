@@ -7,7 +7,11 @@ use librespot_playback::{
     player::{Player, PlayerEventChannel},
 };
 use rand::seq::SliceRandom;
-use std::{collections::VecDeque, sync::Arc, time::Instant};
+use std::{
+    collections::VecDeque,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Repeat {
@@ -29,6 +33,13 @@ pub struct Playback {
     pub shuffle: bool,
     pub repeat: Repeat,
     pub playing: bool,
+    /// librespot confirmó que la canción actual está cargada (evento Playing o
+    /// Paused). Hasta entonces el contador no avanza y la UI muestra «cargando».
+    pub started: bool,
+    /// Cuándo se pidió la carga actual, para detectar cargas que nunca terminan.
+    pub load_at: Instant,
+    /// Último aviso de avance del reproductor, para detectar atascos a mitad de canción.
+    pub progress_at: Instant,
     pos_ms: u32,
     pos_at: Instant,
 }
@@ -49,6 +60,8 @@ impl Playback {
                 _ => Bitrate::Bitrate160,
             },
             normalisation: normalise,
+            // Aviso de posición cada segundo: sirve para saber que el audio avanza.
+            position_update_interval: Some(Duration::from_secs(1)),
             ..Default::default()
         };
         let backend = audio_backend::find(None).expect("backend de audio");
@@ -69,6 +82,9 @@ impl Playback {
                 shuffle: false,
                 repeat: Repeat::Off,
                 playing: false,
+                started: false,
+                load_at: Instant::now(),
+                progress_at: Instant::now(),
                 pos_ms: 0,
                 pos_at: Instant::now(),
             },
@@ -83,6 +99,7 @@ impl Playback {
     pub fn stop(&mut self) {
         self.player.stop();
         self.playing = false;
+        self.started = false;
     }
 
     pub fn play_context(&mut self, uri: String, tracks: Vec<TrackInfo>, start: Option<usize>) {
@@ -95,7 +112,9 @@ impl Playback {
         self.context_uri = uri;
         self.context = tracks;
         self.rebuild_order(start);
-        self.load_current(true);
+        if !self.load_current(true) {
+            self.next(false);
+        }
     }
 
     fn rebuild_order(&mut self, first: usize) {
@@ -111,49 +130,98 @@ impl Playback {
         self.order = order;
     }
 
-    fn load(&mut self, track: TrackInfo, play: bool) {
-        match SpotifyUri::from_uri(&track.uri) {
-            Ok(uri) => self.player.load(uri, play, 0),
-            Err(e) => log::warn!("URI inválida {}: {e}", track.uri),
-        }
+    /// Pide a librespot la canción. Devuelve `false` si no se puede reproducir
+    /// (archivos locales, URIs desconocidas…), para saltarla.
+    fn load(&mut self, track: TrackInfo, play: bool) -> bool {
+        let uri = match SpotifyUri::from_uri(&track.uri) {
+            Ok(uri) => uri,
+            Err(e) => {
+                log::warn!("URI no reproducible {}: {e}", track.uri);
+                return false;
+            }
+        };
+        self.player.load(uri, play, 0);
         self.current = Some(track);
         self.playing = play;
+        self.started = false;
+        self.load_at = Instant::now();
+        self.progress_at = Instant::now();
         self.set_pos(0);
+        true
     }
 
-    fn load_current(&mut self, play: bool) {
-        if let Some(&i) = self.order.get(self.pos) {
-            let t = self.context[i].clone();
-            self.load(t, play);
+    /// Vuelve a pedir la canción actual en la posición en que se quedó. Se usa
+    /// tras reconectar la sesión, que deja colgadas las cargas de la anterior.
+    pub fn reload(&mut self, play: bool) {
+        let Some(t) = self.current.clone() else { return };
+        let Ok(uri) = SpotifyUri::from_uri(&t.uri) else { return };
+        let pos = self.position_ms();
+        // Parar primero obliga a librespot a cargar de nuevo en lugar de
+        // reutilizar el decodificador atascado de la sesión anterior.
+        self.player.stop();
+        self.player.load(uri, play, pos);
+        self.playing = play;
+        self.started = false;
+        self.load_at = Instant::now();
+        self.progress_at = Instant::now();
+        self.set_pos(pos);
+    }
+
+    fn load_current(&mut self, play: bool) -> bool {
+        match self.order.get(self.pos) {
+            Some(&i) => {
+                let t = self.context[i].clone();
+                self.load(t, play)
+            }
+            None => false,
         }
     }
 
     /// Pasa a la siguiente canción. `auto` indica que la anterior terminó sola.
+    /// Las canciones que no se pueden pedir se saltan sin detener la reproducción.
     pub fn next(&mut self, auto: bool) {
+        let mut auto = auto;
+        // Como mucho una vuelta completa, por si nada del contexto es reproducible.
+        for _ in 0..=self.order.len() + self.queue.len() {
+            if self.advance(auto) {
+                return;
+            }
+            // Si la que falló era la repetida, no se insiste con ella.
+            auto = false;
+        }
+        log::warn!("nada reproducible en el contexto");
+        self.playing = false;
+        self.started = false;
+    }
+
+    /// Un paso de `next`. Devuelve `false` si la canción elegida no se pudo pedir.
+    fn advance(&mut self, auto: bool) -> bool {
         if auto
             && self.repeat == Repeat::Track
             && let Some(t) = self.current.clone()
         {
-            self.load(t, true);
-            return;
+            return self.load(t, true);
         }
         if let Some(t) = self.queue.pop_front() {
-            self.load(t, true);
-            return;
+            return self.load(t, true);
         }
         if self.order.is_empty() {
-            return;
+            return true;
         }
         if self.pos + 1 < self.order.len() {
             self.pos += 1;
-            self.load_current(true);
+            self.load_current(true)
         } else if self.repeat != Repeat::Off {
             self.pos = 0;
-            self.load_current(true);
+            self.load_current(true)
         } else {
             // Fin del contexto: vuelve a la primera canción en pausa.
             self.pos = 0;
-            self.load_current(false);
+            if !self.load_current(false) {
+                self.playing = false;
+                self.started = false;
+            }
+            true
         }
     }
 
@@ -170,7 +238,9 @@ impl Playback {
             self.seek(0);
             return;
         }
-        self.load_current(true);
+        if !self.load_current(true) {
+            self.next(false);
+        }
     }
 
     pub fn peek_next(&self) -> Option<&TrackInfo> {
@@ -203,8 +273,13 @@ impl Playback {
         if self.playing {
             self.pos_ms = self.position_ms();
             self.player.pause();
+        } else if !self.started {
+            // librespot no tiene la canción (se detuvo o no llegó a cargar): se pide otra vez.
+            self.reload(true);
+            return;
         } else {
             self.pos_at = Instant::now();
+            self.progress_at = Instant::now();
             self.player.play();
         }
         self.playing = !self.playing;
@@ -214,6 +289,7 @@ impl Playback {
         if self.current.is_some() {
             self.player.seek(ms);
             self.set_pos(ms);
+            self.progress_at = Instant::now();
         }
     }
 
@@ -253,27 +329,52 @@ impl Playback {
 
     /// Salta a la posición `idx` de la lista devuelta por `upcoming`.
     pub fn skip_to(&mut self, idx: usize) {
-        if idx < self.queue.len() {
+        let loaded = if idx < self.queue.len() {
             self.queue.drain(..idx);
-            if let Some(t) = self.queue.pop_front() {
-                self.load(t, true);
+            match self.queue.pop_front() {
+                Some(t) => self.load(t, true),
+                None => true,
             }
         } else {
             let k = idx - self.queue.len();
             self.queue.clear();
             if self.pos + 1 + k < self.order.len() {
                 self.pos += 1 + k;
-                self.load_current(true);
+                self.load_current(true)
+            } else {
+                true
             }
+        };
+        if !loaded {
+            self.next(false);
         }
     }
 
+    /// Posición estimada, sin pasar de la duración de la canción.
     pub fn position_ms(&self) -> u32 {
-        if self.playing {
+        let raw = self.raw_position_ms();
+        match self.duration_ms() {
+            0 => raw,
+            d => raw.min(d),
+        }
+    }
+
+    /// Posición estimada sin recortar. Solo avanza cuando el audio de verdad suena.
+    pub fn raw_position_ms(&self) -> u32 {
+        if self.playing && self.started {
             self.pos_ms + self.pos_at.elapsed().as_millis() as u32
         } else {
             self.pos_ms
         }
+    }
+
+    /// Se pidió reproducir pero librespot aún no ha empezado.
+    pub fn buffering(&self) -> bool {
+        self.playing && !self.started && self.current.is_some()
+    }
+
+    pub fn duration_ms(&self) -> u32 {
+        self.current.as_ref().map(|t| t.duration_ms).unwrap_or(0)
     }
 
     pub fn set_pos(&mut self, ms: u32) {

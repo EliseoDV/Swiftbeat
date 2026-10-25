@@ -1,30 +1,33 @@
 import { ListView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { Icons, Icon } from "icons.slint";
+import { BrandSymbol } from "brand.slint";
 import { State, Api, Img, Fmt, Card, TrackRow, LyricLine } from "state.slint";
-import { IconButton, CircleButton, PlayButton, Cover, TrackItem, Bar, Chip } from "components.slint";
+import { IconButton, CircleButton, PlayButton, Cover, TrackItem, Bar, Chip, EmptyState } from "components.slint";
 
 component SearchBox inherits Rectangle {
     height: 48px;
     border-radius: 24px;
-    background: ta.has-hover || input.has-focus ? Theme.elevated-hover : Theme.elevated;
-    border-width: input.has-focus ? 2px : 0px;
-    border-color: Theme.text;
+    background: input.has-focus ? Theme.elevated : ta.has-hover ? Theme.elevated-hover : Theme.surface;
+    border-width: input.has-focus ? 2px : 1px;
+    border-color: input.has-focus ? Theme.accent : ta.has-hover ? Theme.border-strong : Theme.border;
+    animate background, border-color { duration: Theme.fast; }
     ta := TouchArea {
+        mouse-cursor: text;
         clicked => {
             input.focus();
             Api.go-search();
         }
     }
     HorizontalLayout {
-        padding-left: 14px;
+        padding-left: 16px;
         padding-right: 8px;
         spacing: 10px;
         VerticalLayout {
             alignment: center;
             Icon {
-                width: 22px;
-                height: 22px;
+                width: 20px;
+                height: 20px;
                 data: Icons.search;
                 color: input.has-focus ? Theme.text : Theme.subtext;
             }
@@ -37,7 +40,8 @@ component SearchBox inherits Rectangle {
                 vertical-alignment: center;
                 text <=> State.search-text;
                 color: Theme.text;
-                font-size: 15px;
+                selection-background-color: Theme.accent-soft;
+                font-size: Theme.font-md + 1px;
                 single-line: true;
                 edited => {
                     Api.search(self.text);
@@ -45,9 +49,9 @@ component SearchBox inherits Rectangle {
             }
             if State.search-text == "": Text {
                 x: 0;
-                text: "¿Qué quieres reproducir?";
-                color: Theme.subtext;
-                font-size: 15px;
+                text: "¿Qué quieres escuchar?";
+                color: Theme.muted;
+                font-size: Theme.font-md + 1px;
             }
         }
         if State.search-text != "": VerticalLayout {
@@ -74,6 +78,32 @@ export component TopBar inherits HorizontalLayout {
         spacing: 8px;
         alignment: start;
         horizontal-stretch: 1;
+        // Ambos laterales parten de 0 para repartirse el espacio a partes iguales
+        // y que inicio y búsqueda queden centrados en la ventana.
+        min-width: 0px;
+        preferred-width: 0px;
+        // Solo el símbolo: el nombre ya está en el título de la ventana (guía de marca, §1).
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 20px;
+                background: logo-ta.has-hover ? Theme.surface : transparent;
+                animate background { duration: Theme.fast; }
+                BrandSymbol {
+                    width: 26px;
+                    color: Theme.brand;
+                }
+                logo-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        Api.go-home();
+                    }
+                }
+            }
+        }
+        Rectangle { width: 4px; }
         VerticalLayout {
             alignment: center;
             CircleButton {
@@ -97,20 +127,21 @@ export component TopBar inherits HorizontalLayout {
     }
     CircleButton {
         size: 48px;
-        icon-size: 24px;
+        icon-size: 22px;
         icon: Icons.home;
         stroke: State.page != 0;
         active: State.page == 0;
-        bg: Theme.elevated;
         clicked => {
             Api.go-home();
         }
     }
     SearchBox {
-        width: min(474px, root.width - 360px);
+        width: min(474px, root.width - 400px);
     }
     HorizontalLayout {
         horizontal-stretch: 1;
+        min-width: 0px;
+        preferred-width: 0px;
         alignment: end;
         VerticalLayout {
             alignment: center;
@@ -118,23 +149,24 @@ export component TopBar inherits HorizontalLayout {
                 width: 40px;
                 height: 40px;
                 border-radius: 20px;
-                background: avatar-ta.has-hover ? #2a2a2a : #1f1f1f;
+                background: State.page == 4 ? Theme.accent-soft : avatar-ta.has-hover ? Theme.elevated-hover : Theme.surface;
+                animate background { duration: Theme.fast; }
                 Rectangle {
-                    width: 32px;
-                    height: 32px;
-                    border-radius: 16px;
+                    width: 30px;
+                    height: 30px;
+                    border-radius: 15px;
                     clip: true;
-                    background: #f573a0;
+                    background: Theme.accent;
                     Text {
                         text: State.user-initial;
-                        color: #000000;
-                        font-size: 14px;
+                        color: Theme.on-accent;
+                        font-size: Theme.font-md;
                         font-weight: 700;
                     }
                     if State.user-image != "": Image {
                         width: 100%;
                         height: 100%;
-                        source: Img.get(State.user-image, 32, Img.epoch);
+                        source: Img.get(State.user-image, -32, Img.epoch);
                         image-fit: cover;
                     }
                 }
@@ -154,8 +186,9 @@ component LibraryItem inherits Rectangle {
     property <bool> is-ctx: State.ctx-uri == root.card.uri;
     property <bool> is-open: State.coll-uri == root.card.uri || State.artist-uri == root.card.uri;
     height: 64px;
-    border-radius: 6px;
-    background: root.is-open ? Theme.row-active : ta.has-hover ? Theme.row-hover : transparent;
+    border-radius: Theme.radius-row;
+    background: root.is-open || ta.pressed ? Theme.row-active : ta.has-hover ? Theme.row-hover : transparent;
+    animate background { duration: Theme.fast; }
     ta := TouchArea {
         mouse-cursor: pointer;
         clicked => {
@@ -182,13 +215,14 @@ component LibraryItem inherits Rectangle {
                 Text {
                     text: root.card.title;
                     color: root.is-ctx ? Theme.accent : Theme.text;
-                    font-size: 15px;
+                    font-size: Theme.font-md + 1px;
+                    font-weight: root.is-ctx ? 600 : 400;
                     overflow: elide;
                 }
                 Text {
                     text: root.card.subtitle;
                     color: Theme.subtext;
-                    font-size: 13px;
+                    font-size: Theme.font-sm;
                     overflow: elide;
                 }
             }
@@ -203,31 +237,39 @@ component LibraryItem inherits Rectangle {
             }
         }
     }
+    if root.is-open: Rectangle {
+        x: 0;
+        y: (root.height - self.height) / 2;
+        width: 3px;
+        height: 28px;
+        border-radius: 2px;
+        background: Theme.accent;
+    }
 }
 
 export component Sidebar inherits Rectangle {
     background: Theme.panel;
-    border-radius: 8px;
+    border-radius: Theme.radius-panel;
     clip: true;
     VerticalLayout {
         HorizontalLayout {
             padding-left: 16px;
             padding-right: 12px;
-            padding-top: 12px;
-            padding-bottom: 8px;
+            padding-top: 14px;
+            padding-bottom: 10px;
             spacing: 10px;
             VerticalLayout {
                 alignment: center;
                 Icon {
-                    width: 24px;
-                    height: 24px;
+                    width: 22px;
+                    height: 22px;
                     data: Icons.library;
                     color: Theme.subtext;
                 }
             }
             Text {
                 text: "Tu biblioteca";
-                font-size: 16px;
+                font-size: Theme.font-lg;
                 font-weight: 700;
                 color: Theme.text;
                 vertical-alignment: center;
@@ -243,7 +285,7 @@ export component Sidebar inherits Rectangle {
         }
         HorizontalLayout {
             padding-left: 16px;
-            padding-bottom: 8px;
+            padding-bottom: 10px;
             spacing: 8px;
             alignment: start;
             Chip {
@@ -268,226 +310,283 @@ export component Sidebar inherits Rectangle {
                 }
             }
         }
-        ListView {
-            for c in State.library: LibraryItem {
-                x: 8px;
-                width: parent.width - 16px;
-                card: c;
+        Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            ListView {
+                width: 100%;
+                height: 100%;
+                for c in State.library: LibraryItem {
+                    x: 8px;
+                    width: parent.width - 16px;
+                    card: c;
+                }
+            }
+            if State.library.length == 0: EmptyState {
+                width: 100%;
+                height: 100%;
+                icon: Icons.library;
+                title: State.library-filter == -1 ? "" : "Nada por aquí";
+                body: State.library-filter == -1 ? "" : "No tienes elementos de este tipo en tu biblioteca.";
+                busy: State.library-filter == -1;
             }
         }
     }
 }
 
-export component PlayerBar inherits HorizontalLayout {
+export component PlayerBar inherits Rectangle {
     property <float> last-volume: 0.7;
-    height: 72px;
-    padding-left: 8px;
-    padding-right: 8px;
+    height: 80px;
+    background: Theme.panel;
+    border-radius: Theme.radius-panel;
     HorizontalLayout {
-        width: 30%;
-        spacing: 14px;
-        alignment: start;
-        if State.np-uri != "": VerticalLayout {
-            alignment: center;
-            Cover {
-                width: 56px;
-                height: 56px;
-                url: State.np-image;
-                px: 56;
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            spacing: 2px;
-            Text {
-                text: State.np-title;
-                color: title-ta.has-hover ? Theme.text : Theme.text;
-                font-size: 14px;
-                overflow: elide;
-                title-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        if State.np-album-uri != "" {
-                            Api.navigate(0, State.np-album-uri);
-                        }
-                    }
-                }
-            }
-            Text {
-                text: State.np-artists;
-                color: artist-ta.has-hover ? Theme.text : Theme.subtext;
-                font-size: 12px;
-                overflow: elide;
-                artist-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => {
-                        if State.np-artist-uri != "" {
-                            Api.navigate(1, State.np-artist-uri);
-                        }
-                    }
-                }
-            }
-        }
-        if State.np-uri != "": VerticalLayout {
-            alignment: center;
-            IconButton {
-                icon: Icons.heart;
-                property <bool> liked: Api.is-liked(State.np-uri, State.liked-epoch);
-                stroke: !self.liked;
-                active: self.liked;
-                size: 16px;
-                clicked => {
-                    Api.toggle-like(State.np-uri);
-                }
-            }
-        }
-    }
-    VerticalLayout {
-        horizontal-stretch: 1;
-        alignment: center;
-        spacing: 2px;
+        padding-left: 12px;
+        padding-right: 16px;
+        spacing: 16px;
         HorizontalLayout {
-            alignment: center;
-            spacing: 12px;
-            IconButton {
-                icon: Icons.shuffle;
-                active: State.shuffle;
-                show-dot: true;
-                clicked => {
-                    Api.toggle-shuffle();
+            width: 30%;
+            spacing: 14px;
+            alignment: start;
+            if State.np-uri != "": VerticalLayout {
+                alignment: center;
+                Cover {
+                    width: 56px;
+                    height: 56px;
+                    url: State.np-image;
+                    px: 56;
                 }
             }
-            IconButton {
-                icon: Icons.prev;
-                stroke: false;
-                clicked => {
-                    Api.prev();
+            if State.np-uri == "": VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 56px;
+                    height: 56px;
+                    border-radius: Theme.radius-cover;
+                    background: Theme.surface;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    Icon {
+                        width: 22px;
+                        height: 22px;
+                        data: Icons.note;
+                        stroke: false;
+                        color: Theme.muted;
+                    }
                 }
             }
             VerticalLayout {
                 alignment: center;
-                PlayButton {
-                    size: 32px;
-                    bg: #ffffff;
-                    hover-bg: #f0f0f0;
-                    playing: State.playing;
-                    clicked => {
-                        Api.toggle-play();
+                spacing: 3px;
+                min-width: 0px;
+                Text {
+                    text: State.np-uri != "" ? State.np-title : "Nada sonando";
+                    color: State.np-uri != "" ? (title-ta.has-hover ? #ffffff : Theme.text) : Theme.subtext;
+                    font-size: Theme.font-md;
+                    font-weight: 600;
+                    overflow: elide;
+                    title-ta := TouchArea {
+                        mouse-cursor: State.np-album-uri != "" ? pointer : default;
+                        clicked => {
+                            if State.np-album-uri != "" {
+                                Api.navigate(0, State.np-album-uri);
+                            }
+                        }
+                    }
+                }
+                Text {
+                    text: State.np-uri != "" ? State.np-artists : "Elige una canción para empezar";
+                    color: artist-ta.has-hover && State.np-artist-uri != "" ? Theme.text : Theme.subtext;
+                    font-size: Theme.font-xs;
+                    overflow: elide;
+                    artist-ta := TouchArea {
+                        mouse-cursor: State.np-artist-uri != "" ? pointer : default;
+                        clicked => {
+                            if State.np-artist-uri != "" {
+                                Api.navigate(1, State.np-artist-uri);
+                            }
+                        }
                     }
                 }
             }
-            IconButton {
-                icon: Icons.next;
-                stroke: false;
-                clicked => {
-                    Api.next();
+            if State.np-uri != "": VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.heart;
+                    property <bool> liked: Api.is-liked(State.np-uri, State.liked-epoch);
+                    stroke: !self.liked;
+                    active: self.liked;
+                    size: 16px;
+                    clicked => {
+                        Api.toggle-like(State.np-uri);
+                    }
                 }
             }
-            Rectangle {
-                width: rep.width;
-                height: rep.height;
-                rep := IconButton {
-                    icon: Icons.repeat;
-                    active: State.repeat > 0;
-                    show-dot: true;
-                    clicked => {
-                        Api.cycle-repeat();
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 4px;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: Icons.shuffle;
+                        active: State.shuffle;
+                        show-dot: true;
+                        clicked => {
+                            Api.toggle-shuffle();
+                        }
                     }
                 }
-                if State.repeat == 2: Rectangle {
-                    x: parent.width - 13px;
-                    y: 2px;
-                    width: 11px;
-                    height: 11px;
-                    border-radius: 6px;
-                    background: Theme.accent;
-                    Text {
-                        text: "1";
-                        font-size: 8px;
-                        font-weight: 800;
-                        color: #000000;
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: Icons.prev;
+                        stroke: false;
+                        base: Theme.text;
+                        clicked => {
+                            Api.prev();
+                        }
                     }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    PlayButton {
+                        size: 38px;
+                        bg: Theme.text;
+                        hover-bg: #ffffff;
+                        playing: State.playing;
+                        clicked => {
+                            Api.toggle-play();
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: Icons.next;
+                        stroke: false;
+                        base: Theme.text;
+                        clicked => {
+                            Api.next();
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: rep.width;
+                        height: rep.height;
+                        rep := IconButton {
+                            icon: Icons.repeat;
+                            active: State.repeat > 0;
+                            show-dot: true;
+                            clicked => {
+                                Api.cycle-repeat();
+                            }
+                        }
+                        if State.repeat == 2: Rectangle {
+                            x: parent.width - 13px;
+                            y: 2px;
+                            width: 12px;
+                            height: 12px;
+                            border-radius: 6px;
+                            background: Theme.accent;
+                            Text {
+                                text: "1";
+                                font-size: 8px;
+                                font-weight: 800;
+                                color: Theme.on-accent;
+                            }
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                Text {
+                    width: 40px;
+                    text: Fmt.time(State.np-position);
+                    color: Theme.subtext;
+                    font-size: Theme.font-xs;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+                progress := Bar {
+                    horizontal-stretch: 1;
+                    busy: State.buffering;
+                    value: State.np-duration > 0 ? State.np-position / State.np-duration : 0;
+                    changed(v) => {
+                        State.np-position = v * State.np-duration;
+                        Api.seek(v * State.np-duration);
+                    }
+                }
+                Text {
+                    width: 40px;
+                    text: Fmt.time(State.np-duration);
+                    color: Theme.subtext;
+                    font-size: Theme.font-xs;
+                    vertical-alignment: center;
                 }
             }
         }
         HorizontalLayout {
-            spacing: 8px;
-            Text {
-                width: 40px;
-                text: Fmt.time(State.np-position);
-                color: Theme.subtext;
-                font-size: 12px;
-                horizontal-alignment: right;
-                vertical-alignment: center;
-            }
-            progress := Bar {
-                horizontal-stretch: 1;
-                value: State.np-duration > 0 ? State.np-position / State.np-duration : 0;
-                changed(v) => {
-                    State.np-position = v * State.np-duration;
-                    Api.seek(v * State.np-duration);
-                }
-            }
-            Text {
-                width: 40px;
-                text: Fmt.time(State.np-duration);
-                color: Theme.subtext;
-                font-size: 12px;
-                vertical-alignment: center;
-            }
-        }
-    }
-    HorizontalLayout {
-        width: 30%;
-        alignment: end;
-        spacing: 4px;
-        VerticalLayout {
-            alignment: center;
-            IconButton {
-                icon: Icons.mic;
-                active: State.right-panel == 2;
-                show-dot: true;
-                clicked => {
-                    Api.set-right-panel(State.right-panel == 2 ? 0 : 2);
-                }
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            IconButton {
-                icon: Icons.queue;
-                active: State.right-panel == 1;
-                show-dot: true;
-                clicked => {
-                    Api.set-right-panel(State.right-panel == 1 ? 0 : 1);
-                }
-            }
-        }
-        VerticalLayout {
-            alignment: center;
-            IconButton {
-                icon: State.volume <= 0.001 ? Icons.mute : Icons.volume;
-                clicked => {
-                    if State.volume > 0.001 {
-                        root.last-volume = State.volume;
-                        State.volume = 0;
-                    } else {
-                        State.volume = root.last-volume > 0.01 ? root.last-volume : 0.5;
+            width: 30%;
+            alignment: end;
+            spacing: 4px;
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.mic;
+                    active: State.right-panel == 2;
+                    show-dot: true;
+                    clicked => {
+                        Api.set-right-panel(State.right-panel == 2 ? 0 : 2);
                     }
-                    Api.set-volume(State.volume);
                 }
             }
-        }
-        VerticalLayout {
-            alignment: center;
-            Bar {
-                width: 96px;
-                live: true;
-                wheel-step: 0.05;
-                value: State.volume;
-                changed(v) => {
-                    State.volume = v;
-                    Api.set-volume(v);
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.queue;
+                    active: State.right-panel == 1;
+                    show-dot: true;
+                    clicked => {
+                        Api.set-right-panel(State.right-panel == 1 ? 0 : 1);
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: State.volume <= 0.001 ? Icons.mute : Icons.volume;
+                    clicked => {
+                        if State.volume > 0.001 {
+                            root.last-volume = State.volume;
+                            State.volume = 0;
+                        } else {
+                            State.volume = root.last-volume > 0.01 ? root.last-volume : 0.5;
+                        }
+                        Api.set-volume(State.volume);
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Bar {
+                    width: 100px;
+                    live: true;
+                    wheel-step: 0.05;
+                    value: State.volume;
+                    changed(v) => {
+                        State.volume = v;
+                        Api.set-volume(v);
+                    }
                 }
             }
         }
@@ -497,32 +596,34 @@ export component PlayerBar inherits HorizontalLayout {
 component LyricsView inherits Rectangle {
     property <int> active: State.lyrics-active;
     changed active => {
-        lv.content-y = min(0px, -(root.active * 52px) + lv.visible-height / 3);
+        lv.content-y = min(0px, -(root.active * 56px) + lv.visible-height / 3);
     }
-    if State.lyrics.length == 0: Text {
-        text: State.lyrics-status;
-        color: Theme.subtext;
-        font-size: 14px;
-        wrap: word-wrap;
-        horizontal-alignment: center;
+    if State.lyrics.length == 0: EmptyState {
+        width: 100%;
+        height: 100%;
+        icon: Icons.mic;
+        body: State.lyrics-status;
+        busy: State.lyrics-status == "Cargando letra…";
     }
     lv := ListView {
         visible: State.lyrics.length > 0;
         for line[i] in State.lyrics: Rectangle {
-            height: 52px;
+            height: 56px;
             Text {
-                width: 100%;
+                x: 4px;
+                width: parent.width - 8px;
                 height: 100%;
                 text: line.text;
-                font-size: 18px;
+                font-size: 19px;
                 font-weight: 700;
                 wrap: word-wrap;
                 overflow: elide;
                 vertical-alignment: center;
-                color: i == root.active ? Theme.text : i < root.active ? #ffffff80 : #ffffff4d;
+                color: i == root.active ? Theme.text : line-ta.has-hover ? Theme.subtext : i < root.active ? #ffffff70 : Theme.muted;
+                animate color { duration: Theme.normal; }
             }
-            TouchArea {
-                mouse-cursor: pointer;
+            line-ta := TouchArea {
+                mouse-cursor: line.start >= 0 ? pointer : default;
                 clicked => {
                     if line.start >= 0 {
                         State.np-position = line.start;
@@ -536,16 +637,16 @@ component LyricsView inherits Rectangle {
 
 export component RightPanel inherits Rectangle {
     background: Theme.panel;
-    border-radius: 8px;
+    border-radius: Theme.radius-panel;
     clip: true;
     VerticalLayout {
         padding: 12px;
-        spacing: 8px;
+        spacing: 10px;
         HorizontalLayout {
             padding-left: 4px;
             Text {
                 text: State.right-panel == 1 ? "Cola" : "Letra";
-                font-size: 16px;
+                font-size: Theme.font-lg;
                 font-weight: 700;
                 color: Theme.text;
                 vertical-alignment: center;
@@ -560,55 +661,77 @@ export component RightPanel inherits Rectangle {
             }
         }
         if State.right-panel == 1: VerticalLayout {
-            spacing: 8px;
-            Text {
+            spacing: 10px;
+            if State.np-uri != "": Text {
                 text: "Sonando ahora";
-                font-size: 15px;
-                font-weight: 700;
-                color: Theme.text;
+                font-size: Theme.font-sm;
+                font-weight: 600;
+                color: Theme.subtext;
             }
-            if State.np-uri != "": HorizontalLayout {
-                spacing: 10px;
-                height: 56px;
-                padding-left: 8px;
-                VerticalLayout {
-                    alignment: center;
+            if State.np-uri != "": Rectangle {
+                height: 64px;
+                border-radius: Theme.radius-card;
+                background: Theme.surface;
+                border-width: 1px;
+                border-color: Theme.border;
+                HorizontalLayout {
+                    padding: 8px;
+                    spacing: 12px;
                     Cover {
-                        width: 40px;
-                        height: 40px;
+                        width: 48px;
+                        height: 48px;
                         url: State.np-image;
-                        px: 40;
+                        px: 48;
+                        radius: 4px;
                     }
-                }
-                VerticalLayout {
-                    alignment: center;
-                    Text {
-                        text: State.np-title;
-                        color: Theme.accent;
-                        font-size: 15px;
-                        overflow: elide;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: State.np-title;
+                            color: Theme.accent;
+                            font-size: Theme.font-md + 1px;
+                            font-weight: 600;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: State.np-artists;
+                            color: Theme.subtext;
+                            font-size: Theme.font-sm;
+                            overflow: elide;
+                        }
                     }
-                    Text {
-                        text: State.np-artists;
-                        color: Theme.subtext;
-                        font-size: 13px;
-                        overflow: elide;
+                    if State.playing: VerticalLayout {
+                        alignment: center;
+                        Icon {
+                            width: 16px;
+                            height: 16px;
+                            data: Icons.bars;
+                            color: Theme.accent;
+                        }
                     }
                 }
             }
-            Text {
-                text: State.queue.length > 0 ? "A continuación" : "No hay nada en cola";
-                font-size: 15px;
-                font-weight: 700;
-                color: Theme.text;
+            if State.queue.length > 0: Text {
+                text: "A continuación";
+                font-size: Theme.font-sm;
+                font-weight: 600;
+                color: Theme.subtext;
             }
-            ListView {
+            if State.queue.length > 0: ListView {
                 for t in State.queue: TrackItem {
                     track: t;
                     source: 3;
                     compact: true;
                     show-album: false;
                 }
+            }
+            if State.queue.length == 0: EmptyState {
+                vertical-stretch: 1;
+                icon: Icons.queue;
+                title: "No hay nada en cola";
+                body: "Haz clic derecho en una canción y elige «Añadir a la cola».";
             }
         }
         if State.right-panel == 2: LyricsView {

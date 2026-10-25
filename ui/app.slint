@@ -1,4 +1,5 @@
 import { Theme } from "theme.slint";
+import { Icons, Icon } from "icons.slint";
 import { State, Api, Img, Fmt, TrackRow, Card, Shelf, LyricLine } from "state.slint";
 import { TopBar, Sidebar, PlayerBar, RightPanel } from "shell.slint";
 import { HomePage, SearchPage, CollectionPage, ArtistPage, SettingsPage, LoginScreen, LoadingScreen } from "pages.slint";
@@ -67,7 +68,7 @@ export component AppWindow inherits Window {
                 Rectangle {
                     horizontal-stretch: 1;
                     background: Theme.panel;
-                    border-radius: 8px;
+                    border-radius: Theme.radius-panel;
                     clip: true;
                     if State.page == 0: HomePage { }
                     if State.page == 1: SearchPage { }
@@ -83,15 +84,32 @@ export component AppWindow inherits Window {
         }
 
         if State.toast != "": Rectangle {
-            y: root.height - 140px;
-            width: toast-text.preferred-width + 32px;
-            height: 40px;
-            border-radius: 8px;
+            y: root.height - 148px;
+            width: toast-row.preferred-width;
+            height: 44px;
+            border-radius: 22px;
             background: Theme.toast;
-            toast-text := Text {
-                text: State.toast;
-                color: #ffffff;
-                font-size: 14px;
+            border-width: 1px;
+            border-color: Theme.border-strong;
+            toast-row := HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 20px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        width: 18px;
+                        height: 18px;
+                        data: Icons.info;
+                        color: Theme.accent;
+                    }
+                }
+                Text {
+                    text: State.toast;
+                    color: Theme.text;
+                    font-size: Theme.font-md;
+                    vertical-alignment: center;
+                }
             }
         }
     }

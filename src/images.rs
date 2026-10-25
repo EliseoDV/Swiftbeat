@@ -4,10 +4,14 @@
 //! imágenes de los elementos visibles (las listas están virtualizadas), se reducen
 //! al tamaño en pantalla y se guardan con un presupuesto de memoria fijo (LRU).
 //! Al llegar imágenes nuevas se incrementa `Img.epoch` para que se repinten.
+//!
+//! Un tamaño negativo pide la imagen recortada en círculo (artistas, avatares):
+//! el renderizador por software de Slint no recorta imágenes con bordes redondeados,
+//! así que el círculo se hace aquí, con el borde suavizado y fondo transparente.
 
 use crate::{AppWindow, Img};
 use image::imageops::FilterType;
-use slint::{Color, ComponentHandle, Image, Rgb8Pixel, SharedPixelBuffer};
+use slint::{Color, ComponentHandle, Image, Rgb8Pixel, Rgba8Pixel, SharedPixelBuffer};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -16,7 +20,8 @@ use std::{
 };
 use tokio::{runtime::Handle, sync::Semaphore};
 
-const BUDGET_BYTES: usize = 48 * 1024 * 1024;
+// Unos 400 carátulas medianas: al volver atrás o desplazarse no se descargan de nuevo.
+const BUDGET_BYTES: usize = 96 * 1024 * 1024;
 const SIZES: [u32; 8] = [48, 64, 96, 128, 192, 256, 384, 640];
 
 struct Entry {
@@ -74,12 +79,19 @@ fn bucket(px: i32) -> u32 {
     SIZES.iter().copied().find(|s| *s >= want).unwrap_or(640)
 }
 
+/// Imagen ya reducida, lista para pasar al hilo de la UI.
+enum Pixels {
+    Rgb(SharedPixelBuffer<Rgb8Pixel>),
+    Round(SharedPixelBuffer<Rgba8Pixel>),
+}
+
 fn get(url: &str, px: i32) -> Image {
     if url.is_empty() {
         return Image::default();
     }
-    let size = bucket(px);
-    let key = format!("{size}|{url}");
+    let round = px < 0;
+    let size = bucket(px.abs());
+    let key = format!("{size}{}|{url}", if round { "o" } else { "" });
     CACHE.with_borrow_mut(|c| {
         c.tick += 1;
         let tick = c.tick;
@@ -88,7 +100,7 @@ fn get(url: &str, px: i32) -> Image {
             return e.image.clone();
         }
         if !c.failed.contains(&key) && c.pending.insert(key.clone()) {
-            fetch(url.to_string(), size, key);
+            fetch(url.to_string(), size, round, key);
         }
         Image::default()
     })
@@ -96,13 +108,14 @@ fn get(url: &str, px: i32) -> Image {
 
 fn tint(url: &str) -> Color {
     if url == "liked" {
-        return Color::from_rgb_u8(0x50, 0x38, 0xa0);
+        // Lavanda oscura de la marca (Theme.liked-from).
+        return Color::from_rgb_u8(0x4b, 0x4d, 0x9a);
     }
     CACHE.with_borrow(|c| c.colors.get(url).copied())
-        .unwrap_or(Color::from_rgb_u8(0x40, 0x40, 0x40))
+        .unwrap_or(Color::from_rgb_u8(0x2c, 0x2c, 0x3e))
 }
 
-fn fetch(url: String, size: u32, key: String) {
+fn fetch(url: String, size: u32, round: bool, key: String) {
     CTX.with_borrow(|ctx| {
         let Some(ctx) = ctx else { return };
         let http = ctx.http.clone();
@@ -117,7 +130,7 @@ fn fetch(url: String, size: u32, key: String) {
                 }
             };
             let decoded = match bytes {
-                Some(b) => tokio::task::spawn_blocking(move || decode(&b, size))
+                Some(b) => tokio::task::spawn_blocking(move || decode(&b, size, round))
                     .await
                     .ok()
                     .flatten(),
@@ -129,7 +142,7 @@ fn fetch(url: String, size: u32, key: String) {
 }
 
 /// Decodifica y reduce para que el lado corto mida `size` px. Devuelve también el color medio.
-fn decode(bytes: &[u8], size: u32) -> Option<(SharedPixelBuffer<Rgb8Pixel>, [u8; 3])> {
+fn decode(bytes: &[u8], size: u32, round: bool) -> Option<(Pixels, [u8; 3])> {
     let img = image::load_from_memory(bytes).ok()?;
     let (w, h) = (img.width(), img.height());
     let short = w.min(h).max(1);
@@ -154,8 +167,27 @@ fn decode(bytes: &[u8], size: u32) -> Option<(SharedPixelBuffer<Rgb8Pixel>, [u8;
     }
     let n = n.max(1);
     let avg = [(sum[0] / n) as u8, (sum[1] / n) as u8, (sum[2] / n) as u8];
+    if round {
+        return Some((Pixels::Round(circle(&rgb)), avg));
+    }
     let buf = SharedPixelBuffer::<Rgb8Pixel>::clone_from_slice(rgb.as_raw(), rgb.width(), rgb.height());
-    Some((buf, avg))
+    Some((Pixels::Rgb(buf), avg))
+}
+
+/// Recorta el centro de la imagen en un círculo con el borde suavizado.
+fn circle(rgb: &image::RgbImage) -> SharedPixelBuffer<Rgba8Pixel> {
+    let side = rgb.width().min(rgb.height()).max(1);
+    let (ox, oy) = ((rgb.width() - side) / 2, (rgb.height() - side) / 2);
+    let r = side as f32 / 2.0;
+    let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(side, side);
+    for (i, px) in buf.make_mut_slice().iter_mut().enumerate() {
+        let (x, y) = (i as u32 % side, i as u32 / side);
+        let p = rgb.get_pixel(ox + x, oy + y);
+        let (dx, dy) = (x as f32 + 0.5 - r, y as f32 + 0.5 - r);
+        let alpha = (r - (dx * dx + dy * dy).sqrt() + 0.5).clamp(0.0, 1.0);
+        *px = Rgba8Pixel { r: p[0], g: p[1], b: p[2], a: (alpha * 255.0) as u8 };
+    }
+    buf
 }
 
 /// Ajusta el color medio para que sirva de fondo: canal máximo en ~150 y algo más saturado.
@@ -172,18 +204,27 @@ fn header_color([r, g, b]: [u8; 3]) -> Color {
     )
 }
 
-fn finish(key: String, url: String, decoded: Option<(SharedPixelBuffer<Rgb8Pixel>, [u8; 3])>) {
+fn finish(key: String, url: String, decoded: Option<(Pixels, [u8; 3])>) {
     let schedule = CACHE.with_borrow_mut(|c| {
         c.pending.remove(&key);
         let Some((buf, avg)) = decoded else {
             c.failed.insert(key);
             return false;
         };
-        let bytes = buf.width() as usize * buf.height() as usize * 3;
+        let (image, bytes) = match buf {
+            Pixels::Rgb(b) => {
+                let bytes = b.width() as usize * b.height() as usize * 3;
+                (Image::from_rgb8(b), bytes)
+            }
+            Pixels::Round(b) => {
+                let bytes = b.width() as usize * b.height() as usize * 4;
+                (Image::from_rgba8(b), bytes)
+            }
+        };
         c.colors.insert(url, header_color(avg));
         c.tick += 1;
         let used = c.tick;
-        c.entries.insert(key, Entry { image: Image::from_rgb8(buf), bytes, used });
+        c.entries.insert(key, Entry { image, bytes, used });
         c.bytes += bytes;
         while c.bytes > BUDGET_BYTES {
             let Some(oldest) = c.entries.iter().min_by_key(|(_, e)| e.used).map(|(k, _)| k.clone()) else {

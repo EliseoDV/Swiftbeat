@@ -11,28 +11,31 @@ export component IconButton inherits Rectangle {
     in property <bool> show-dot;
     in property <color> base: Theme.subtext;
     callback clicked;
-    width: root.size + 12px;
-    height: root.size + 12px;
+    width: root.size + 14px;
+    height: root.size + 14px;
+    border-radius: self.height / 2;
+    background: !root.enabled ? transparent : ta.pressed ? #ffffff1f : ta.has-hover ? #ffffff12 : transparent;
+    animate background { duration: Theme.fast; }
+    Icon {
+        width: root.size;
+        height: root.size;
+        data: root.icon;
+        stroke: root.stroke;
+        color: !root.enabled ? Theme.disabled : root.active ? (ta.has-hover ? Theme.accent-hover : Theme.accent) : (ta.has-hover ? Theme.text : root.base);
+    }
+    if root.show-dot && root.active: Rectangle {
+        y: root.height - 5px;
+        width: 4px;
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.accent;
+    }
     ta := TouchArea {
         mouse-cursor: root.enabled ? pointer : default;
         clicked => {
             if root.enabled {
                 root.clicked();
             }
-        }
-        Icon {
-            width: root.size;
-            height: root.size;
-            data: root.icon;
-            stroke: root.stroke;
-            color: !root.enabled ? Theme.muted : root.active ? (ta.has-hover ? Theme.accent-hover : Theme.accent) : (ta.has-hover ? Theme.text : root.base);
-        }
-        if root.show-dot && root.active: Rectangle {
-            y: root.height - 4px;
-            width: 4px;
-            height: 4px;
-            border-radius: 2px;
-            background: Theme.accent;
         }
     }
 }
@@ -44,12 +47,20 @@ export component CircleButton inherits Rectangle {
     in property <length> icon-size: 16px;
     in property <bool> enabled: true;
     in property <bool> active;
-    in property <color> bg: #0a0a0a;
+    in property <color> bg: Theme.surface;
     callback clicked;
     width: root.size;
     height: root.size;
     border-radius: root.size / 2;
-    background: ta.has-hover && root.enabled ? Theme.elevated-hover : root.bg;
+    background: !root.enabled ? root.bg : ta.pressed ? Theme.elevated : ta.has-hover ? Theme.elevated-hover : root.bg;
+    animate background { duration: Theme.fast; }
+    Icon {
+        width: root.icon-size;
+        height: root.icon-size;
+        data: root.icon;
+        stroke: root.stroke;
+        color: !root.enabled ? Theme.disabled : root.active ? Theme.accent : ta.has-hover ? Theme.text : Theme.subtext;
+    }
     ta := TouchArea {
         mouse-cursor: root.enabled ? pointer : default;
         clicked => {
@@ -58,13 +69,6 @@ export component CircleButton inherits Rectangle {
             }
         }
     }
-    Icon {
-        width: root.icon-size;
-        height: root.icon-size;
-        data: root.icon;
-        stroke: root.stroke;
-        color: !root.enabled ? Theme.muted : (root.active || ta.has-hover) ? Theme.text : Theme.subtext;
-    }
 }
 
 export component PlayButton inherits Rectangle {
@@ -72,24 +76,94 @@ export component PlayButton inherits Rectangle {
     in property <length> size: 48px;
     in property <color> bg: Theme.accent;
     in property <color> hover-bg: Theme.accent-hover;
-    in property <color> icon-color: #000000;
+    in property <color> icon-color: Theme.on-accent;
     callback clicked;
     width: root.size;
     height: root.size;
     border-radius: root.size / 2;
-    background: ta.has-hover ? root.hover-bg : root.bg;
+    background: ta.pressed ? root.bg.darker(0.15) : ta.has-hover ? root.hover-bg : root.bg;
+    animate background { duration: Theme.fast; }
+    Icon {
+        // El triángulo del play se desplaza un poco para que parezca centrado.
+        x: (root.width - self.width) / 2 + (root.playing ? 0px : root.size * 0.03);
+        width: root.size * 0.42;
+        height: root.size * 0.42;
+        data: root.playing ? Icons.pause : Icons.play;
+        stroke: false;
+        color: root.icon-color;
+    }
     ta := TouchArea {
         mouse-cursor: pointer;
         clicked => {
             root.clicked();
         }
     }
-    Icon {
-        width: root.size * 0.42;
-        height: root.size * 0.42;
-        data: root.playing ? Icons.pause : Icons.play;
-        stroke: false;
-        color: root.icon-color;
+}
+
+// Tres puntos que laten. Solo existe mientras hay algo cargando, así que la
+// animación no despierta la UI el resto del tiempo.
+export component Spinner {
+    in property <length> size: 28px;
+    in property <color> color: Theme.accent;
+    property <float> t: Math.mod(animation-tick() / 1ms, 1200) / 1200;
+    width: root.size;
+    height: root.size / 3;
+    for d[i] in 3: Rectangle {
+        x: i * root.size * 0.38;
+        y: (root.height - self.height) / 2;
+        width: root.size * 0.24;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.color;
+        opacity: 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(root.t * 360deg - i * 70deg));
+    }
+}
+
+// Mensaje centrado para listas vacías, errores y estados de espera.
+export component EmptyState inherits VerticalLayout {
+    in property <string> icon: Icons.note;
+    in property <string> title;
+    in property <string> body;
+    in property <bool> busy;
+    alignment: center;
+    spacing: 10px;
+    padding: 24px;
+    HorizontalLayout {
+        alignment: center;
+        if root.busy: VerticalLayout {
+            alignment: center;
+            height: 64px;
+            Spinner { size: 36px; }
+        }
+        if !root.busy: Rectangle {
+            width: 64px;
+            height: 64px;
+            border-radius: 32px;
+            background: Theme.surface;
+            border-width: 1px;
+            border-color: Theme.border;
+            Icon {
+                width: 28px;
+                height: 28px;
+                data: root.icon;
+                color: Theme.subtext;
+            }
+        }
+    }
+    if root.title != "": Text {
+        text: root.title;
+        font-size: Theme.font-lg;
+        font-weight: 700;
+        color: Theme.text;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+    if root.body != "": Text {
+        text: root.body;
+        font-size: Theme.font-md;
+        color: Theme.subtext;
+        horizontal-alignment: center;
+        wrap: word-wrap;
     }
 }
 
@@ -98,13 +172,13 @@ export component Cover inherits Rectangle {
     in property <int> px: 64;
     in property <bool> round;
     in property <bool> liked-tile;
-    in property <length> radius: 4px;
+    in property <length> radius: Theme.radius-cover;
     border-radius: root.round ? root.width / 2 : root.radius;
     clip: true;
-    background: root.liked-tile ? @linear-gradient(135deg, #450af5 0%, #8e8ee5 60%, #c4efd9 100%) : #282828;
+    background: root.liked-tile ? @linear-gradient(135deg, Theme.liked-from 0%, Theme.liked-to 100%) : Theme.elevated;
     if root.url == "" && !root.liked-tile: Icon {
-        width: root.width * 0.4;
-        height: root.width * 0.4;
+        width: root.width * 0.38;
+        height: root.width * 0.38;
         data: Icons.note;
         stroke: false;
         color: Theme.muted;
@@ -119,7 +193,8 @@ export component Cover inherits Rectangle {
     if root.url != "": Image {
         width: 100%;
         height: 100%;
-        source: Img.get(root.url, root.px, Img.epoch);
+        // Tamaño negativo: Rust devuelve la imagen ya recortada en círculo (ver images.rs).
+        source: Img.get(root.url, root.round ? -root.px : root.px, Img.epoch);
         image-fit: cover;
     }
 }
@@ -127,9 +202,10 @@ export component Cover inherits Rectangle {
 export component CardView inherits Rectangle {
     in property <Card> card;
     property <bool> ctx-playing: State.ctx-uri == root.card.uri && State.playing;
-    border-radius: 8px;
-    background: ta.has-hover ? Theme.card-hover : transparent;
-    animate background { duration: 120ms; }
+    property <bool> hot: ta.has-hover || root.ctx-playing;
+    border-radius: Theme.radius-card;
+    background: ta.pressed ? Theme.elevated : ta.has-hover ? Theme.card-hover : transparent;
+    animate background { duration: Theme.fast; }
     ta := TouchArea {
         mouse-cursor: pointer;
         clicked => {
@@ -148,13 +224,13 @@ export component CardView inherits Rectangle {
                     px: 200;
                     round: root.card.kind == 1;
                     liked-tile: root.card.kind == 3;
-                    radius: 6px;
+                    radius: Theme.radius-card;
                 }
                 PlayButton {
                     x: parent.width - self.width - 8px;
-                    y: parent.height - self.height - (ta.has-hover || root.ctx-playing ? 8px : 0px);
-                    opacity: ta.has-hover || root.ctx-playing ? 1 : 0;
-                    animate opacity, y { duration: 150ms; }
+                    y: parent.height - self.height - (root.hot ? 8px : 0px);
+                    opacity: root.hot ? 1 : 0;
+                    animate opacity, y { duration: Theme.normal; easing: ease-out; }
                     playing: root.ctx-playing;
                     clicked => {
                         if State.ctx-uri == root.card.uri {
@@ -165,18 +241,18 @@ export component CardView inherits Rectangle {
                     }
                 }
             }
-            Rectangle { height: 4px; }
+            Rectangle { height: 6px; }
             Text {
                 text: root.card.title;
-                color: Theme.text;
-                font-size: 15px;
+                color: root.ctx-playing ? Theme.accent : Theme.text;
+                font-size: Theme.font-md + 1px;
                 font-weight: 600;
                 overflow: elide;
             }
             Text {
                 text: root.card.subtitle;
                 color: Theme.subtext;
-                font-size: 13px;
+                font-size: Theme.font-sm;
                 overflow: elide;
             }
         }
@@ -185,21 +261,23 @@ export component CardView inherits Rectangle {
 
 export component ShelfView inherits VerticalLayout {
     in property <Shelf> shelf;
-    property <int> cols: max(2, Math.floor((self.width + 8px) / 188px));
-    property <length> card-w: (self.width - (self.cols - 1) * 8px) / self.cols;
-    spacing: 2px;
+    // Las tarjetas tienen 12px de relleno: se extienden 12px a cada lado para que
+    // la portada quede alineada con el título de la sección.
+    property <int> cols: max(2, Math.floor((self.width + 32px) / 188px));
+    property <length> card-w: (self.width + 24px - (self.cols - 1) * 8px) / self.cols;
+    spacing: 6px;
     Text {
         text: root.shelf.title;
-        font-size: 22px;
+        font-size: Theme.font-section;
         font-weight: 700;
         color: Theme.text;
         overflow: elide;
     }
     Rectangle {
-        height: root.card-w + 44px;
+        height: root.card-w + 56px;
         for c[i] in root.shelf.items: CardView {
             visible: i < root.cols;
-            x: i * (root.card-w + 8px);
+            x: i * (root.card-w + 8px) - 12px;
             y: 0;
             width: root.card-w;
             height: parent.height;
@@ -214,7 +292,7 @@ export component Link {
     in property <string> uri;
     in property <int> kind;
     in property <color> color: Theme.subtext;
-    in property <length> font-size: 13px;
+    in property <length> font-size: Theme.font-sm;
     min-width: 0px;
     preferred-width: label.preferred-width;
     label := Text {
@@ -251,9 +329,11 @@ export component TrackItem inherits Rectangle {
     in property <bool> compact;
     property <bool> current: root.track.uri == State.np-uri;
     property <bool> liked: Api.is-liked(root.track.uri, State.liked-epoch);
+    property <color> secondary: ta.has-hover ? Theme.text : Theme.subtext;
     height: 56px;
-    border-radius: 4px;
-    background: ta.has-hover ? Theme.row-hover : transparent;
+    border-radius: Theme.radius-row;
+    background: ta.pressed ? Theme.row-active : ta.has-hover ? Theme.row-hover : transparent;
+    animate background { duration: Theme.fast; }
     ContextMenuArea {
         Menu {
             MenuItem {
@@ -303,16 +383,24 @@ export component TrackItem inherits Rectangle {
                 spacing: root.compact ? 10px : 16px;
                 if !root.compact: Rectangle {
                     width: 24px;
-                    if !ta.has-hover: Text {
+                    if !ta.has-hover && root.current && State.playing: Icon {
+                        x: parent.width - self.width;
+                        width: 16px;
+                        height: 16px;
+                        data: Icons.bars;
+                        color: Theme.accent;
+                    }
+                    if !ta.has-hover && !(root.current && State.playing): Text {
                         width: 100%;
                         height: 100%;
                         text: root.track.index + 1;
                         color: root.current ? Theme.accent : Theme.subtext;
-                        font-size: 15px;
+                        font-size: Theme.font-md + 1px;
                         horizontal-alignment: right;
                         vertical-alignment: center;
                     }
                     if ta.has-hover: IconButton {
+                        x: parent.width - self.width + 7px;
                         icon: root.current && State.playing ? Icons.pause : Icons.play;
                         stroke: false;
                         size: 14px;
@@ -333,11 +421,40 @@ export component TrackItem inherits Rectangle {
                     preferred-width: 0px;
                     if root.show-cover: VerticalLayout {
                         alignment: center;
-                        Cover {
+                        Rectangle {
                             width: 40px;
                             height: 40px;
-                            url: root.track.image;
-                            px: 40;
+                            Cover {
+                                width: 100%;
+                                height: 100%;
+                                url: root.track.image;
+                                px: 40;
+                                radius: 4px;
+                            }
+                            // Sin columna de número (búsqueda, cola) el play va sobre la portada.
+                            if root.compact && (ta.has-hover || (root.current && State.playing)): Rectangle {
+                                border-radius: 4px;
+                                background: #000000a6;
+                                if !ta.has-hover: Icon {
+                                    width: 16px;
+                                    height: 16px;
+                                    data: Icons.bars;
+                                    color: Theme.accent;
+                                }
+                                if ta.has-hover: IconButton {
+                                    icon: root.current && State.playing ? Icons.pause : Icons.play;
+                                    stroke: false;
+                                    size: 16px;
+                                    base: #ffffff;
+                                    clicked => {
+                                        if root.current {
+                                            Api.toggle-play();
+                                        } else {
+                                            Api.play-row(root.source, root.track.index);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                     VerticalLayout {
@@ -346,7 +463,8 @@ export component TrackItem inherits Rectangle {
                         Text {
                             text: root.track.title;
                             color: root.current ? Theme.accent : Theme.text;
-                            font-size: 15px;
+                            font-size: Theme.font-md + 1px;
+                            font-weight: root.current ? 600 : 400;
                             overflow: elide;
                         }
                         HorizontalLayout {
@@ -356,13 +474,13 @@ export component TrackItem inherits Rectangle {
                                 Rectangle {
                                     width: 15px;
                                     height: 15px;
-                                    border-radius: 2px;
+                                    border-radius: 3px;
                                     background: Theme.subtext;
                                     Text {
                                         text: "E";
                                         font-size: 10px;
                                         font-weight: 700;
-                                        color: #000000;
+                                        color: Theme.panel;
                                     }
                                 }
                             }
@@ -373,36 +491,36 @@ export component TrackItem inherits Rectangle {
                                     text: root.track.artists;
                                     uri: root.track.artist-uri;
                                     kind: 1;
-                                    color: ta.has-hover ? Theme.text : Theme.subtext;
+                                    color: root.secondary;
                                 }
                                 if root.track.artist2 != "": Text {
                                     text: ", ";
-                                    color: ta.has-hover ? Theme.text : Theme.subtext;
-                                    font-size: 13px;
+                                    color: root.secondary;
+                                    font-size: Theme.font-sm;
                                     vertical-alignment: center;
                                 }
                                 if root.track.artist2 != "": Link {
                                     text: root.track.artist2;
                                     uri: root.track.artist2-uri;
                                     kind: 1;
-                                    color: ta.has-hover ? Theme.text : Theme.subtext;
+                                    color: root.secondary;
                                 }
                                 if root.track.artist3 != "": Text {
                                     text: ", ";
-                                    color: ta.has-hover ? Theme.text : Theme.subtext;
-                                    font-size: 13px;
+                                    color: root.secondary;
+                                    font-size: Theme.font-sm;
                                     vertical-alignment: center;
                                 }
                                 if root.track.artist3 != "": Link {
                                     text: root.track.artist3;
                                     uri: root.track.artist3-uri;
                                     kind: 1;
-                                    color: ta.has-hover ? Theme.text : Theme.subtext;
+                                    color: root.secondary;
                                 }
                                 if root.track.more-artists: Text {
                                     text: ", …";
-                                    color: ta.has-hover ? Theme.text : Theme.subtext;
-                                    font-size: 13px;
+                                    color: root.secondary;
+                                    font-size: Theme.font-sm;
                                     vertical-alignment: center;
                                 }
                             }
@@ -420,11 +538,11 @@ export component TrackItem inherits Rectangle {
                         text: root.track.album;
                         uri: root.track.album-uri;
                         kind: 0;
-                        color: ta.has-hover ? Theme.text : Theme.subtext;
+                        color: root.secondary;
                     }
                 }
                 Rectangle {
-                    width: 30px;
+                    width: 32px;
                     if root.liked || ta.has-hover: IconButton {
                         icon: Icons.heart;
                         stroke: !root.liked;
@@ -439,7 +557,7 @@ export component TrackItem inherits Rectangle {
                     width: 44px;
                     text: root.track.duration;
                     color: Theme.subtext;
-                    font-size: 13px;
+                    font-size: Theme.font-sm;
                     horizontal-alignment: right;
                     vertical-alignment: center;
                 }
@@ -448,19 +566,22 @@ export component TrackItem inherits Rectangle {
     }
 }
 
-// Barra deslizante para progreso y volumen.
+// Barra deslizante para progreso y volumen. Con `busy` muestra un tramo que
+// recorre la barra (canción cargando) en lugar del progreso.
 export component Bar inherits Rectangle {
     in property <float> value;
     in property <bool> live;
+    in property <bool> busy;
     // Paso por cada muesca de la rueda del ratón (0 = sin rueda).
     in property <float> wheel-step;
     callback changed(float);
     out property <bool> dragging: ta.pressed;
     property <float> drag-value;
     property <float> shown: ta.pressed ? root.drag-value : max(0, min(1, root.value));
+    property <bool> hot: (ta.has-hover || ta.pressed) && !root.busy;
     height: 16px;
     ta := TouchArea {
-        mouse-cursor: pointer;
+        mouse-cursor: root.busy ? default : pointer;
         scroll-event(e) => {
             if root.wheel-step <= 0 || e.delta-y == 0 {
                 return reject;
@@ -469,18 +590,18 @@ export component Bar inherits Rectangle {
             return accept;
         }
         pointer-event(e) => {
-            if e.kind == PointerEventKind.down {
+            if !root.busy && e.kind == PointerEventKind.down {
                 root.drag-value = max(0, min(1, self.mouse-x / root.width));
                 if root.live {
                     root.changed(root.drag-value);
                 }
             }
-            if e.kind == PointerEventKind.up {
+            if !root.busy && e.kind == PointerEventKind.up {
                 root.changed(root.drag-value);
             }
         }
         moved => {
-            if self.pressed {
+            if self.pressed && !root.busy {
                 root.drag-value = max(0, min(1, self.mouse-x / root.width));
                 if root.live {
                     root.changed(root.drag-value);
@@ -489,20 +610,30 @@ export component Bar inherits Rectangle {
         }
     }
     Rectangle {
-        y: (root.height - 4px) / 2;
-        height: 4px;
+        y: (root.height - self.height) / 2;
+        height: root.hot ? 6px : 4px;
         width: 100%;
-        border-radius: 2px;
+        border-radius: self.height / 2;
         background: Theme.track;
-        Rectangle {
+        clip: root.busy;
+        animate height { duration: Theme.fast; }
+        if !root.busy: Rectangle {
             x: 0;
             width: parent.width * root.shown;
             height: 100%;
-            border-radius: 2px;
-            background: ta.has-hover || ta.pressed ? Theme.accent : Theme.text;
+            border-radius: parent.height / 2;
+            background: root.hot ? Theme.accent-hover : Theme.accent;
+        }
+        if root.busy: Rectangle {
+            property <float> t: Math.mod(animation-tick() / 1ms, 1400) / 1400;
+            x: -self.width + self.t * (parent.width + self.width);
+            width: max(24px, parent.width * 0.25);
+            height: 100%;
+            border-radius: parent.height / 2;
+            background: Theme.accent;
         }
     }
-    if ta.has-hover || ta.pressed: Rectangle {
+    if root.hot: Rectangle {
         x: root.width * root.shown - 6px;
         y: (root.height - 12px) / 2;
         width: 12px;
@@ -518,14 +649,18 @@ export component Chip inherits Rectangle {
     callback clicked;
     height: 32px;
     border-radius: 16px;
-    background: root.active ? Theme.text : (ta.has-hover ? #ffffff24 : #ffffff12);
+    background: root.active ? (ta.has-hover ? Theme.accent-hover : Theme.accent) : ta.pressed ? #ffffff24 : ta.has-hover ? #ffffff1a : #ffffff0d;
+    border-width: root.active ? 0px : 1px;
+    border-color: Theme.border;
+    animate background { duration: Theme.fast; }
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
+        padding-left: 14px;
+        padding-right: 14px;
         Text {
             text: root.text;
-            color: root.active ? #000000 : Theme.text;
-            font-size: 14px;
+            color: root.active ? Theme.on-accent : Theme.text;
+            font-size: Theme.font-md;
+            font-weight: root.active ? 600 : 400;
             vertical-alignment: center;
         }
     }
@@ -539,19 +674,35 @@ export component Chip inherits Rectangle {
 
 export component PillButton inherits Rectangle {
     in property <string> text;
+    in property <string> icon;
     in property <bool> enabled: true;
     in property <bool> primary: true;
+    in property <length> pill-height: 48px;
     callback clicked;
-    height: 48px;
-    border-radius: 24px;
-    background: !root.enabled ? #3a3a3a : root.primary ? (ta.has-hover ? Theme.accent-hover : Theme.accent) : (ta.has-hover ? #ffffff24 : #ffffff12);
+    height: root.pill-height;
+    border-radius: self.height / 2;
+    background: !root.enabled ? Theme.elevated : root.primary ? (ta.pressed ? Theme.accent.darker(0.15) : ta.has-hover ? Theme.accent-hover : Theme.accent) : (ta.pressed ? #ffffff24 : ta.has-hover ? #ffffff14 : transparent);
+    border-width: root.primary ? 0px : 1px;
+    border-color: ta.has-hover ? Theme.subtext : Theme.border-strong;
+    animate background { duration: Theme.fast; }
     HorizontalLayout {
-        padding-left: 32px;
-        padding-right: 32px;
+        padding-left: root.pill-height < 40px ? 16px : 28px;
+        padding-right: self.padding-left;
+        spacing: 8px;
+        alignment: center;
+        if root.icon != "": VerticalLayout {
+            alignment: center;
+            Icon {
+                width: 16px;
+                height: 16px;
+                data: root.icon;
+                color: root.primary && root.enabled ? Theme.on-accent : Theme.text;
+            }
+        }
         Text {
             text: root.text;
-            color: root.primary && root.enabled ? #000000 : Theme.text;
-            font-size: 16px;
+            color: !root.enabled ? Theme.muted : root.primary ? Theme.on-accent : Theme.text;
+            font-size: root.pill-height < 40px ? Theme.font-sm : Theme.font-lg;
             font-weight: 700;
             vertical-alignment: center;
             horizontal-alignment: center;

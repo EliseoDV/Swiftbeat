@@ -92,6 +92,7 @@ export global State {
     in-out property <int> np-duration;
     in-out property <int> np-position;
     in-out property <bool> playing;
+    in-out property <bool> buffering;  // se pidió reproducir y aún no suena
     in-out property <string> ctx-uri;
     in-out property <bool> shuffle;
     in-out property <int> repeat;  // 0 no, 1 contexto, 2 canción
@@ -106,6 +107,7 @@ export global State {
     in-out property <[Card]> my-playlists;
     in-out property <int> bitrate: 160;
     in-out property <bool> normalise: true;
+    in-out property <bool> restart-needed;  // hay ajustes que solo se aplican al reiniciar
 }
 
 export global Api {
@@ -136,6 +138,7 @@ export global Api {
     callback set-right-panel(int);
     callback set-bitrate(int);
     callback set-normalise(bool);
+    callback restart();
     callback open-url(string);
 }
 
