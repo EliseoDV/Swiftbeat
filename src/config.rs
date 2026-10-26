@@ -8,8 +8,24 @@ pub fn data_dir() -> PathBuf {
         .join("Swiftbeat")
 }
 
+/// Token de la Web API, cifrado (ver `secure`).
 pub fn token_path() -> PathBuf {
+    data_dir().join("webapi_token.bin")
+}
+
+/// Token de la Web API en claro, como lo guardaban las versiones hasta la 0.1.5.
+pub fn legacy_token_path() -> PathBuf {
     data_dir().join("webapi_token.json")
+}
+
+/// Credenciales reutilizables de librespot, cifradas (ver `secure`).
+pub fn credentials_path() -> PathBuf {
+    data_dir().join("credentials.bin")
+}
+
+/// Donde librespot escribe las credenciales, en claro, al conectar.
+pub fn plain_credentials_path() -> PathBuf {
+    data_dir().join("credentials.json")
 }
 
 #[derive(Serialize, Deserialize, Clone)]

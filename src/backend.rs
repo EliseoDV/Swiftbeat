@@ -8,6 +8,7 @@ use crate::{
     config::{self, Config},
     meta::{self, CardInfo, KIND_ALBUM, KIND_ARTIST, KIND_LIKED, KIND_PLAYLIST, KIND_TRACK, LIKED_URI, TrackInfo},
     player::{Playback, Repeat},
+    secure,
     ui::{self, Ui},
     webapi::WebApi,
 };
@@ -334,6 +335,24 @@ async fn authorize_both(http: &reqwest::Client, ui: &Ui, client_id: &str) -> Res
     Ok((web, stream.access_token))
 }
 
+/// Credenciales reutilizables de librespot: primero las cifradas y, si no hay,
+/// las que dejaron en claro las versiones anteriores.
+fn load_credentials(cache: &Cache) -> Option<Credentials> {
+    secure::read(&config::credentials_path())
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .or_else(|| cache.credentials())
+}
+
+/// librespot escribe las credenciales en claro al conectar: se cifran y se
+/// borra el original.
+fn seal_credentials() {
+    let plain = config::plain_credentials_path();
+    let Ok(json) = std::fs::read(&plain) else { return };
+    if secure::write(&config::credentials_path(), &json) {
+        let _ = std::fs::remove_file(&plain);
+    }
+}
+
 fn greeting() -> &'static str {
     let hour = time::OffsetDateTime::now_local().map(|t| t.hour()).unwrap_or(12);
     match hour {
@@ -388,8 +407,9 @@ impl Backend {
                 return;
             }
         };
-        let creds = cache.credentials();
-        let token = Token::load(&config::token_path());
+        let creds = load_credentials(&cache);
+        let token = Token::load(&config::token_path())
+            .or_else(|| Token::migrate(&config::legacy_token_path(), &config::token_path()));
         match (self.cfg.client_id.is_empty(), creds, token) {
             (false, Some(creds), Some(token)) => {
                 self.screen(0, "Conectando con Spotify…");
@@ -407,6 +427,7 @@ impl Backend {
         tokio::time::timeout(CONNECT_TIMEOUT, session.connect(creds, true))
             .await
             .map_err(|_| anyhow!("Spotify no respondió a tiempo"))??;
+        seal_credentials();
         let api = Arc::new(WebApi::new(
             self.http.clone(),
             self.cfg.client_id.clone(),
@@ -476,8 +497,14 @@ impl Backend {
             svc.playback.stop();
             svc.session.shutdown();
         }
-        let _ = std::fs::remove_file(config::token_path());
-        let _ = std::fs::remove_file(config::data_dir().join("credentials.json"));
+        for path in [
+            config::token_path(),
+            config::legacy_token_path(),
+            config::credentials_path(),
+            config::plain_credentials_path(),
+        ] {
+            let _ = std::fs::remove_file(path);
+        }
         if let Ok(mut l) = self.liked.write() {
             l.clear();
         }
@@ -515,11 +542,12 @@ impl Backend {
     /// Crea una sesión nueva y se la pasa al reproductor y a la Web API.
     async fn reconnect(&mut self) -> bool {
         let Some(svc) = &mut self.svc else { return false };
-        let Some(creds) = svc.cache.credentials() else { return false };
+        let Some(creds) = load_credentials(&svc.cache) else { return false };
         log::info!("reconectando la sesión");
         let session = Session::new(SessionConfig::default(), Some(svc.cache.clone()));
         let error = match tokio::time::timeout(CONNECT_TIMEOUT, session.connect(creds, true)).await {
             Ok(Ok(())) => {
+                seal_credentials();
                 svc.playback.set_session(session.clone());
                 svc.api.set_session(session.clone());
                 let old = std::mem::replace(&mut svc.session, session);

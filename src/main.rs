@@ -12,6 +12,7 @@ mod media;
 mod meta;
 mod player;
 mod repaint;
+mod secure;
 mod single;
 mod ui;
 mod webapi;

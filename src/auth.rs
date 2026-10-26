@@ -1,3 +1,4 @@
+use crate::secure;
 use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::RngCore;
@@ -64,13 +65,22 @@ impl Token {
     }
 
     pub fn load(path: &Path) -> Option<Self> {
-        serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+        serde_json::from_slice(&secure::read(path)?).ok()
     }
 
-    pub fn save(&self, path: &Path) {
-        if let Ok(json) = serde_json::to_vec(self) {
-            let _ = std::fs::write(path, json);
+    /// Lee un token guardado en claro (versiones anteriores), lo guarda cifrado
+    /// en `path` y borra el original.
+    pub fn migrate(legacy: &Path, path: &Path) -> Option<Self> {
+        let token: Self = serde_json::from_slice(&std::fs::read(legacy).ok()?).ok()?;
+        if token.save(path) {
+            let _ = std::fs::remove_file(legacy);
         }
+        Some(token)
+    }
+
+    /// Guarda el token cifrado. Devuelve si se pudo.
+    pub fn save(&self, path: &Path) -> bool {
+        serde_json::to_vec(self).is_ok_and(|json| secure::write(path, &json))
     }
 }
 
