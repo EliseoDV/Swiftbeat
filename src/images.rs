@@ -16,13 +16,15 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{runtime::Handle, sync::Semaphore};
 
 // Unos 400 carátulas medianas: al volver atrás o desplazarse no se descargan de nuevo.
 const BUDGET_BYTES: usize = 96 * 1024 * 1024;
 const SIZES: [u32; 8] = [48, 64, 96, 128, 192, 256, 384, 640];
+/// Tras un fallo (p. ej. un corte de red) no se vuelve a pedir la imagen hasta pasado este tiempo.
+const RETRY_AFTER: Duration = Duration::from_secs(30);
 
 struct Entry {
     image: Image,
@@ -35,10 +37,11 @@ struct Cache {
     entries: HashMap<String, Entry>,
     colors: HashMap<String, Color>,
     pending: HashSet<String>,
-    failed: HashSet<String>,
+    failed: HashMap<String, Instant>,
     bytes: usize,
     tick: u64,
     bump_scheduled: bool,
+    retry_scheduled: bool,
 }
 
 struct Ctx {
@@ -99,7 +102,11 @@ fn get(url: &str, px: i32) -> Image {
             e.used = tick;
             return e.image.clone();
         }
-        if !c.failed.contains(&key) && c.pending.insert(key.clone()) {
+        if c.failed.get(&key).is_some_and(|at| at.elapsed() < RETRY_AFTER) {
+            return Image::default();
+        }
+        if c.pending.insert(key.clone()) {
+            c.failed.remove(&key);
             fetch(url.to_string(), size, round, key);
         }
         Image::default()
@@ -208,7 +215,8 @@ fn finish(key: String, url: String, decoded: Option<(Pixels, [u8; 3])>) {
     let schedule = CACHE.with_borrow_mut(|c| {
         c.pending.remove(&key);
         let Some((buf, avg)) = decoded else {
-            c.failed.insert(key);
+            c.failed.insert(key, Instant::now());
+            schedule_retry(c, RETRY_AFTER);
             return false;
         };
         let (image, bytes) = match buf {
@@ -245,12 +253,42 @@ fn finish(key: String, url: String, decoded: Option<(Pixels, [u8; 3])>) {
         // Agrupa varias imágenes en un solo repintado.
         slint::Timer::single_shot(Duration::from_millis(40), || {
             CACHE.with_borrow_mut(|c| c.bump_scheduled = false);
-            CTX.with_borrow(|ctx| {
-                if let Some(ui) = ctx.as_ref().and_then(|c| c.ui.upgrade()) {
-                    let img = ui.global::<Img>();
-                    img.set_epoch(img.get_epoch() + 1);
-                }
-            });
+            bump_epoch();
         });
     }
+}
+
+/// Al cumplirse el plazo se repinta, y las imágenes visibles que fallaron se
+/// piden otra vez.
+fn schedule_retry(c: &mut Cache, delay: Duration) {
+    if c.retry_scheduled {
+        return;
+    }
+    c.retry_scheduled = true;
+    slint::Timer::single_shot(delay, || {
+        CACHE.with_borrow_mut(|c| {
+            c.retry_scheduled = false;
+            // Fallos posteriores al que programó este aviso: esperan su propio plazo.
+            let wait = c
+                .failed
+                .values()
+                .map(|at| RETRY_AFTER.saturating_sub(at.elapsed()))
+                .filter(|d| !d.is_zero())
+                .min();
+            if let Some(wait) = wait {
+                schedule_retry(c, wait);
+            }
+        });
+        bump_epoch();
+    });
+}
+
+/// Hace que la UI vuelva a pedir las imágenes visibles.
+fn bump_epoch() {
+    CTX.with_borrow(|ctx| {
+        if let Some(ui) = ctx.as_ref().and_then(|c| c.ui.upgrade()) {
+            let img = ui.global::<Img>();
+            img.set_epoch(img.get_epoch() + 1);
+        }
+    });
 }
