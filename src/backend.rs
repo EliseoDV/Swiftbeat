@@ -79,6 +79,8 @@ pub enum Cmd {
     Normalise(bool),
     Restart,
     // Internas
+    /// Fin de las autorizaciones del navegador: Client ID, token web y token de reproducción.
+    LoginDone(String, Result<(Token, String)>),
     Player(PlayerEvent),
     Page(u64, Page),
     Library(LibraryData),
@@ -321,6 +323,17 @@ pub async fn run(ui: Ui, tx: UnboundedSender<Cmd>, mut rx: UnboundedReceiver<Cmd
     }
 }
 
+/// Los dos pasos del inicio de sesión: la app del usuario (Web API) y el cliente
+/// de escritorio (reproducción). Devuelve el token web y el de reproducción.
+async fn authorize_both(http: &reqwest::Client, ui: &Ui, client_id: &str) -> Result<(Token, String)> {
+    let web = auth::authorize(http, client_id, &auth::web_scopes()).await?;
+    let _ = std::fs::create_dir_all(config::data_dir());
+    web.save(&config::token_path());
+    ui.state(|st| st.set_status_text("Paso 2 de 2: autoriza la reproducción en el navegador…".into()));
+    let stream = auth::authorize(http, auth::STREAMING_CLIENT_ID, &auth::streaming_scopes()).await?;
+    Ok((web, stream.access_token))
+}
+
 fn greeting() -> &'static str {
     let hour = time::OffsetDateTime::now_local().map(|t| t.hour()).unwrap_or(12);
     match hour {
@@ -391,7 +404,9 @@ impl Backend {
 
     async fn start(&mut self, cache: Cache, creds: Credentials, token: Token) -> Result<()> {
         let session = Session::new(SessionConfig::default(), Some(cache.clone()));
-        session.connect(creds, true).await?;
+        tokio::time::timeout(CONNECT_TIMEOUT, session.connect(creds, true))
+            .await
+            .map_err(|_| anyhow!("Spotify no respondió a tiempo"))??;
         let api = Arc::new(WebApi::new(
             self.http.clone(),
             self.cfg.client_id.clone(),
@@ -421,13 +436,23 @@ impl Backend {
         Ok(())
     }
 
-    async fn login(&mut self, client_id: String) {
+    /// Las autorizaciones esperan al navegador (hasta minutos), así que van en
+    /// una tarea aparte y el actor sigue atendiendo órdenes mientras tanto.
+    fn login(&mut self, client_id: String) {
         let client_id = client_id.trim().to_string();
         self.ui.state(|st| {
             st.set_busy(true);
             st.set_status_text("Paso 1 de 2: autoriza tu app en el navegador…".into());
         });
-        if let Err(e) = self.login_inner(client_id).await {
+        let (http, ui, tx) = (self.http.clone(), self.ui.clone(), self.tx.clone());
+        tokio::spawn(async move {
+            let result = authorize_both(&http, &ui, &client_id).await;
+            let _ = tx.send(Cmd::LoginDone(client_id, result));
+        });
+    }
+
+    async fn login_done(&mut self, client_id: String, result: Result<(Token, String)>) {
+        if let Err(e) = self.finish_login(client_id, result).await {
             log::error!("login: {e:#}");
             let msg = format!("{e}");
             self.ui.state(move |st| {
@@ -437,17 +462,13 @@ impl Backend {
         }
     }
 
-    async fn login_inner(&mut self, client_id: String) -> Result<()> {
-        let web = auth::authorize(&self.http, &client_id, &auth::web_scopes()).await?;
-        let _ = std::fs::create_dir_all(config::data_dir());
-        web.save(&config::token_path());
-        self.ui.state(|st| st.set_status_text("Paso 2 de 2: autoriza la reproducción en el navegador…".into()));
-        let stream = auth::authorize(&self.http, auth::STREAMING_CLIENT_ID, &auth::streaming_scopes()).await?;
+    async fn finish_login(&mut self, client_id: String, result: Result<(Token, String)>) -> Result<()> {
+        let (web, stream) = result?;
         self.cfg.client_id = client_id;
         self.cfg.save();
         self.ui.state(|st| st.set_status_text("Conectando…".into()));
         let cache = Cache::new(Some(config::data_dir()), None, None, None)?;
-        self.start(cache, Credentials::with_access_token(stream.access_token), web).await
+        self.start(cache, Credentials::with_access_token(stream), web).await
     }
 
     fn logout(&mut self) {
@@ -540,7 +561,10 @@ impl Backend {
             self.toast("No se pudo reproducir. Revisa tu conexión.");
             return;
         }
-        self.reconnect().await;
+        if !self.reconnect().await {
+            // Sin sesión no hay nada que recargar; el vigilante volverá a intentarlo.
+            return;
+        }
         if near_end || self.recoveries > 2 {
             // Ya había terminado (se perdió el aviso de fin) o no hay forma de que suene.
             self.pb().next(true);
@@ -569,7 +593,8 @@ impl Backend {
             self.ensure_session().await;
         }
         match cmd {
-            Cmd::Login(id) => self.login(id).await,
+            Cmd::Login(id) => self.login(id),
+            Cmd::LoginDone(id, result) => self.login_done(id, result).await,
             Cmd::Logout => self.logout(),
             Cmd::Tick => self.tick(),
             Cmd::Toast(msg) => self.toast(msg),
