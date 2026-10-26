@@ -1,69 +1,17 @@
 use crate::meta::TrackInfo;
 use librespot_core::{Session, SpotifyUri};
 use librespot_playback::{
-    audio_backend::{self, Sink, SinkBuilder, SinkError, SinkResult},
-    config::{AudioFormat, Bitrate, PlayerConfig},
-    convert::Converter,
-    decoder::AudioPacket,
+    audio_backend::Sink,
+    config::{Bitrate, PlayerConfig},
     mixer::{self, Mixer, MixerConfig},
     player::{Player, PlayerEventChannel},
 };
 use rand::seq::SliceRandom;
 use std::{
     collections::VecDeque,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
-
-/// El reproductor quiso sonar y no había ninguna salida de audio.
-static NO_AUDIO: AtomicBool = AtomicBool::new(false);
-
-/// Devuelve si faltó la salida de audio desde la última consulta.
-pub fn take_no_audio() -> bool {
-    NO_AUDIO.swap(false, Ordering::Relaxed)
-}
-
-/// Abre la salida de audio al empezar a sonar y no al crear el reproductor. El
-/// backend de librespot hace `unwrap()` si no hay dispositivo, y con
-/// `panic = "abort"` eso cerraría la app; así, sin dispositivo, se pausa.
-struct LazySink {
-    builder: SinkBuilder,
-    inner: Option<Box<dyn Sink>>,
-}
-
-impl Sink for LazySink {
-    fn start(&mut self) -> SinkResult<()> {
-        if self.inner.is_none() {
-            use cpal::traits::HostTrait;
-            if cpal::default_host().default_output_device().is_none() {
-                NO_AUDIO.store(true, Ordering::Relaxed);
-                return Err(SinkError::ConnectionRefused("no hay salida de audio".into()));
-            }
-            self.inner = Some((self.builder)(None, AudioFormat::default()));
-        }
-        match &mut self.inner {
-            Some(sink) => sink.start(),
-            None => Ok(()),
-        }
-    }
-
-    fn stop(&mut self) -> SinkResult<()> {
-        match &mut self.inner {
-            Some(sink) => sink.stop(),
-            None => Ok(()),
-        }
-    }
-
-    fn write(&mut self, packet: AudioPacket, converter: &mut Converter) -> SinkResult<()> {
-        match &mut self.inner {
-            Some(sink) => sink.write(packet, converter),
-            None => Err(SinkError::NotConnected("no hay salida de audio".into())),
-        }
-    }
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Repeat {
@@ -116,9 +64,8 @@ impl Playback {
             position_update_interval: Some(Duration::from_secs(1)),
             ..Default::default()
         };
-        let builder = audio_backend::find(None).expect("backend de audio");
-        let player = Player::new(config, session, mixer.get_soft_volume(), move || {
-            Box::new(LazySink { builder, inner: None }) as Box<dyn Sink>
+        let player = Player::new(config, session, mixer.get_soft_volume(), || {
+            Box::new(crate::audio::Output::new()) as Box<dyn Sink>
         });
         let events = player.get_player_event_channel();
         (

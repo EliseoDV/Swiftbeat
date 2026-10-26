@@ -5525,7 +5525,6 @@ version = "0.1.6"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "cpal",
  "dirs",
  "image",
  "librespot-core",
@@ -5538,6 +5537,7 @@ dependencies = [
  "rand 0.9.5",
  "raw-window-handle",
  "reqwest",
+ "rodio",
  "serde",
  "serde_json",
  "sha2",

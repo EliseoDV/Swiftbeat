@@ -36,7 +36,7 @@ url = "2"
 anyhow = "1"
 time = { version = "0.3", features = ["local-offset"] }
 souvlaki = "0.8"
-cpal = "0.16"
+rodio = { version = "0.21", default-features = false, features = ["playback"] }
 raw-window-handle = "0.6"
 
 [build-dependencies]

@@ -1,6 +1,7 @@
 // Sin consola en las compilaciones de release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod audio;
 mod auth;
 mod backend;
 mod config;
