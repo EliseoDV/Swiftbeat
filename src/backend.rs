@@ -1193,6 +1193,9 @@ impl Backend {
                 pb.started = true;
                 pb.set_pos(position_ms);
                 self.push_playstate();
+                if crate::player::take_no_audio() {
+                    self.toast("No se encontró ninguna salida de audio");
+                }
             }
             PlayerEvent::Seeked { track_id, position_ms, .. }
             | PlayerEvent::PositionCorrection { track_id, position_ms, .. }

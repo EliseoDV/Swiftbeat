@@ -5525,6 +5525,7 @@ version = "0.1.5"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "cpal",
  "dirs",
  "image",
  "librespot-core",
