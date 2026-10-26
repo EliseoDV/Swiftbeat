@@ -48,9 +48,12 @@ impl WebApi {
         }
     }
 
-    async fn user_token(&self, force: bool) -> Result<String> {
+    /// Token del usuario, renovado si caducó o si es el que Spotify acaba de
+    /// rechazar. Si otra petición ya lo renovó mientras esta esperaba su turno,
+    /// se usa ese sin pedir otro.
+    async fn user_token(&self, rejected: Option<&str>) -> Result<String> {
         let mut t = self.token.lock().await;
-        if force || !t.is_fresh() {
+        if rejected == Some(t.access_token.as_str()) || !t.is_fresh() {
             *t = auth::refresh(&self.http, &self.client_id, &t.refresh_token).await?;
             t.save(&self.token_path);
         }
@@ -101,9 +104,10 @@ impl WebApi {
         } else {
             format!("{BASE}{path}")
         };
-        let mut resp = self.send(&method, &url, &self.user_token(false).await?, body).await?;
+        let token = self.user_token(None).await?;
+        let mut resp = self.send(&method, &url, &token, body).await?;
         if resp.status() == StatusCode::UNAUTHORIZED {
-            resp = self.send(&method, &url, &self.user_token(true).await?, body).await?;
+            resp = self.send(&method, &url, &self.user_token(Some(&token)).await?, body).await?;
         }
         let status = resp.status();
         if matches!(

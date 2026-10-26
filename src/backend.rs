@@ -370,6 +370,16 @@ fn spotify_id(uri: &str) -> &str {
     uri.rsplit(':').next().unwrap_or(uri)
 }
 
+impl Drop for Backend {
+    /// Al cerrar la ventana, el runtime suelta el actor. El volumen se guarda con
+    /// retraso (ver `tick`), así que el último cambio se guarda aquí.
+    fn drop(&mut self) {
+        if self.cfg_dirty {
+            self.cfg.save();
+        }
+    }
+}
+
 impl Backend {
     fn init_ui(&self) {
         let cfg = self.cfg.clone();

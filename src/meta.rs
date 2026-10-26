@@ -444,17 +444,26 @@ pub async fn playlist_head(session: &Session, uri: &str) -> Result<PlaylistHead>
 fn strip_html(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut in_tag = false;
-    for c in text.chars() {
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
         match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
+            // Solo abre etiqueta si lo parece («<a», «</a>», «<!--»): en «BPM < 130»
+            // o «I <3 rock» el texto se conserva.
+            '<' if !in_tag && chars.peek().is_some_and(|n| n.is_ascii_alphabetic() || matches!(n, '/' | '!')) => {
+                in_tag = true
+            }
+            '>' if in_tag => in_tag = false,
             _ if !in_tag => out.push(c),
             _ => {}
         }
     }
-    out.replace("&amp;", "&")
+    // `&amp;` al final, para no decodificar dos veces «&amp;lt;».
+    out.replace("&lt;", "<")
+        .replace("&gt;", ">")
         .replace("&#x27;", "'")
+        .replace("&#x2F;", "/")
         .replace("&quot;", "\"")
+        .replace("&amp;", "&")
 }
 
 /// Letra de una canción: (inicio en ms o -1 si no está sincronizada, texto).
